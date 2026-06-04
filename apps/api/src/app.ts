@@ -4,6 +4,7 @@ import pinoHttp from 'pino-http'
 import { env } from './env.js'
 import { logger } from './logger.js'
 import { authRouter } from './auth/router.js'
+import { usersRouter } from './users/router.js'
 
 export function buildApp(): Express {
   const app = express()
@@ -13,6 +14,7 @@ export function buildApp(): Express {
 
   app.get('/health', (_req, res) => res.json({ status: 'ok', ts: Date.now() }))
   app.use('/api/auth', authRouter)
+  app.use('/api', usersRouter)
 
   return app
 }
