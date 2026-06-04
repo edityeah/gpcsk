@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build artefacts
+dist/
+build/
+.next/
+.cache/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+*.env
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Brainstorming companion artefacts
+.superpowers/
+
+# Claude
+.claude/
+
+# In-progress downloads
+*.crdownload
+
+# Large reference PDFs (kept locally for seed-data inspiration; too big for git)
+docs/references/gpcb-sources/gpcb-annual-report-2024-25.pdf
+
+# Prisma generated client (regenerated from schema)
+**/prisma/generated/
