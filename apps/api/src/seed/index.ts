@@ -1,5 +1,6 @@
 import { prisma } from '../db.js'
 import { seedReference } from './reference.js'
+import { seedIndustries } from './industries.js'
 import { seedDemoUsers } from './users.js'
 import { logger } from '../logger.js'
 
@@ -17,6 +18,11 @@ async function main() {
     `reference data done: ${sectorCount} sectors, ${districtCount} districts, ` +
     `${talukaCount} talukas, ${zoneCount} GIDC zones, ${normCount} norms`
   )
+
+  logger.info('seeding industries…')
+  await seedIndustries(prisma)
+  const industryCount = await prisma.industry.count()
+  logger.info(`industries done: ${industryCount} industrial units seeded`)
 
   logger.info('seeding demo users…')
   await seedDemoUsers(prisma)
