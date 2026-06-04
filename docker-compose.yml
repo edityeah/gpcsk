@@ -1,0 +1,20 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: gpcsk-db
+    environment:
+      POSTGRES_USER: gpcsk
+      POSTGRES_PASSWORD: gpcsk_dev
+      POSTGRES_DB: gpcsk
+    ports:
+      - "5433:5432"
+    volumes:
+      - gpcsk-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gpcsk -d gpcsk"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  gpcsk-pgdata:
