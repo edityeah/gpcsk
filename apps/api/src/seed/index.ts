@@ -4,6 +4,8 @@ import { seedIndustries } from './industries.js'
 import { seedDemoUsers } from './users.js'
 import { seedConsents } from './consents.js'
 import { seedInspections } from './inspections.js'
+import { seedComplaints } from './complaints.js'
+import { seedSensors } from './sensors.js'
 import { logger } from '../logger.js'
 
 async function main() {
@@ -43,6 +45,22 @@ async function main() {
     prisma.violation.count(),
   ])
   logger.info(`inspections done: ${inspectionCount} inspections, ${violationCount} violations seeded`)
+
+  logger.info('seeding complaints…')
+  const { complaints: cCount, responses: rCount } = await seedComplaints(prisma)
+  logger.info(`complaints done: ${cCount} complaints, ${rCount} responses seeded`)
+
+  logger.info('seeding monitoring stations, readings, and exceedances…')
+  await seedSensors(prisma)
+  const [stationCount, readingCount, exceedanceCount] = await Promise.all([
+    prisma.monitoringStation.count(),
+    prisma.sensorReading.count(),
+    prisma.exceedance.count(),
+  ])
+  logger.info(
+    `sensors done: ${stationCount} stations, ${readingCount} readings, ` +
+    `${exceedanceCount} exceedances seeded`
+  )
 
   await prisma.$disconnect()
 }
