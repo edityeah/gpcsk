@@ -1,0 +1,636 @@
+// Gujarat Pollution Control Samiksha Kendra — full data model.
+// One model per entity in spec §7. Indexed for the access patterns each
+// slice will exercise.
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+// ── Enums ───────────────────────────────────────────────────────────────
+
+enum Role {
+  CONSENT_OFFICER
+  MONITORING_OFFICER
+  INSPECTION_ENFORCEMENT_OFFICER
+  COMPLAINTS_OFFICER
+  SENIOR_REVIEWER
+}
+
+enum Stream {
+  AIR
+  WATER
+  HAZARDOUS_WASTE
+  NOISE_MSW
+}
+
+enum IndustryCategory {
+  RED
+  ORANGE
+  GREEN
+  WHITE
+}
+
+enum ConsentType {
+  CTE
+  CTO
+  HW_AUTH
+}
+
+enum ConsentState {
+  DRAFT
+  UNDER_REVIEW
+  RECOMMENDED
+  APPROVED
+  REJECTED
+  EXPIRED
+  RENEWED
+}
+
+enum MakerCheckerState {
+  DRAFT
+  PENDING_REVIEW
+  COMMITTED
+  RETURNED_FOR_REVISION
+  WITHDRAWN
+}
+
+enum ViolationSeverity {
+  MINOR
+  MAJOR
+  CRITICAL
+}
+
+enum ViolationSource {
+  SENSOR
+  INSPECTION
+  COMPLAINT
+  AUDIT
+}
+
+enum DispositionState {
+  PENDING
+  CONFIRMED_VIOLATION
+  SENSOR_GLITCH
+  RESOLVED
+}
+
+enum MonitoringStationType {
+  OCEMS
+  CEQMS
+  AAQM
+  MINARS
+  GEMS
+  VOC
+}
+
+enum SensorValidity {
+  VALID
+  FLAGGED
+  MISSING
+}
+
+enum EnforcementActionType {
+  SHOW_CAUSE
+  CLOSURE_DIRECTION
+  BANK_GUARANTEE_INVOCATION
+  RECOVERY
+  SEALING
+}
+
+enum InspectionState {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+enum ComplaintChannel {
+  WEB
+  PHONE
+  EMAIL
+  WALK_IN
+}
+
+enum ComplaintState {
+  NEW
+  ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+  DUPLICATE
+}
+
+enum NotificationCategory {
+  EXCEEDANCE_CRITICAL
+  EXCEEDANCE_PREDICTED
+  COMPLAINT_ASSIGNED
+  COMPLAINT_HOTSPOT_ALERT
+  RENEWAL_DUE_30
+  RENEWAL_DUE_60
+  RENEWAL_DUE_90
+  INSPECTION_DUE
+  MAKER_CHECKER_PENDING
+  NOTICE_COMMITTED
+  ANOMALY_FLAG
+  FESTIVAL_PLANNER_REMINDER
+  BROADCAST
+  GENERAL
+}
+
+enum NotificationPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum KnowledgeSourceType {
+  ACT
+  RULE
+  SOP
+  ANNUAL_REPORT
+  CPCB_NORM
+  CETP_REPORT
+  FESTIVAL_MONITORING
+  FAQ
+}
+
+// ── Identity ────────────────────────────────────────────────────────────
+
+model User {
+  id          String   @id @default(cuid())
+  role        Role
+  xgnId       String?  @unique
+  phone       String   @unique
+  name        String
+  email       String?  @unique
+  designation String?
+  region      String?
+  profile     Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sessions                 Session[]
+  auditEvents              AuditLog[]
+  draftedConsentApps       ConsentApplication[] @relation("ConsentMaker")
+  reviewedConsentApps      ConsentApplication[] @relation("ConsentChecker")
+  inspectionsLed           Inspection[]
+  draftedEnforcement       EnforcementAction[]  @relation("EnforcementMaker")
+  reviewedEnforcement      EnforcementAction[]  @relation("EnforcementChecker")
+  assignedComplaints       Complaint[]
+  complaintResponses       ComplaintResponse[]
+  exceedanceDispositions   Exceedance[]
+  chatThreads              ChatThread[]
+  notifications            Notification[]
+  broadcastsSent           Broadcast[]
+
+  @@index([role])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  issuedAt  DateTime @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String
+  entity    String
+  entityId  String
+  action    String
+  before    Json?
+  after     Json?
+  reason    String?
+  createdAt DateTime @default(now())
+
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([entity, entityId])
+  @@index([actorId, createdAt])
+}
+
+// ── Reference data ──────────────────────────────────────────────────────
+
+model Sector {
+  id   String @id @default(cuid())
+  code String @unique
+  name String
+
+  industries Industry[]
+}
+
+model District {
+  id   String @id @default(cuid())
+  code String @unique
+  name String
+
+  talukas    Taluka[]
+  industries Industry[]
+}
+
+model Taluka {
+  id         String @id @default(cuid())
+  name       String
+  districtId String
+
+  district   District   @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  industries Industry[]
+
+  @@index([districtId])
+}
+
+model GidcZone {
+  id         String  @id @default(cuid())
+  name       String
+  districtId String?
+
+  industries Industry[]
+}
+
+model Norm {
+  id         String @id @default(cuid())
+  parameter  String
+  stream     Stream
+  category   String?
+  value      Float
+  unit       String
+  regulator  String
+  source     String
+
+  @@unique([parameter, stream, category, regulator])
+}
+
+// ── Industry & regulatory workflow ─────────────────────────────────────
+
+model Industry {
+  id                  String           @id @default(cuid())
+  name                String
+  ucNumber            String           @unique
+  category            IndustryCategory
+  sectorId            String?
+  districtId          String?
+  talukaId            String?
+  gidcZoneId          String?
+  lat                 Float?
+  lng                 Float?
+  capacity            Json             @default("{}")
+  classificationScheme String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  sector       Sector?              @relation(fields: [sectorId],     references: [id], onDelete: SetNull)
+  district     District?            @relation(fields: [districtId],   references: [id], onDelete: SetNull)
+  taluka       Taluka?              @relation(fields: [talukaId],     references: [id], onDelete: SetNull)
+  gidcZone     GidcZone?            @relation(fields: [gidcZoneId],   references: [id], onDelete: SetNull)
+  consents     ConsentApplication[]
+  inspections  Inspection[]
+  violations   Violation[]
+  enforcement  EnforcementAction[]
+  complaints   Complaint[]
+  stations     MonitoringStation[]
+  labSamples   LabSample[]
+
+  @@index([category])
+  @@index([districtId, talukaId])
+  @@index([gidcZoneId])
+}
+
+model ConsentApplication {
+  id            String       @id @default(cuid())
+  industryId    String
+  type          ConsentType
+  submittedAt   DateTime     @default(now())
+  validityFrom  DateTime?
+  validityTo    DateTime?
+  state         ConsentState @default(DRAFT)
+  parameters    Json         @default("{}")
+  feeStatus     String?
+  makerId       String?
+  checkerId     String?
+  reviewerNotes String?
+  letterFileUrl String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  industry Industry @relation(fields: [industryId], references: [id], onDelete: Cascade)
+  maker    User?    @relation("ConsentMaker",   fields: [makerId],   references: [id], onDelete: SetNull)
+  checker  User?    @relation("ConsentChecker", fields: [checkerId], references: [id], onDelete: SetNull)
+
+  @@index([industryId])
+  @@index([type, state])
+  @@index([validityTo])
+}
+
+model Inspection {
+  id            String          @id @default(cuid())
+  industryId    String
+  scheduledAt   DateTime
+  inspectorId   String?
+  completedAt   DateTime?
+  state         InspectionState @default(SCHEDULED)
+  observations  Json            @default("{}")
+  photos        Json            @default("[]")
+  nextDueAt     DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  industry   Industry    @relation(fields: [industryId],  references: [id], onDelete: Cascade)
+  inspector  User?       @relation(fields: [inspectorId], references: [id], onDelete: SetNull)
+  violations Violation[]
+
+  @@index([industryId])
+  @@index([state, scheduledAt])
+}
+
+model Violation {
+  id               String            @id @default(cuid())
+  industryId       String
+  inspectionId     String?
+  source           ViolationSource
+  parameter        String
+  observedValue    Float?
+  normValue        Float?
+  unit             String?
+  severity         ViolationSeverity
+  detectedAt       DateTime          @default(now())
+  dispositionState DispositionState  @default(PENDING)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  industry   Industry    @relation(fields: [industryId],   references: [id], onDelete: Cascade)
+  inspection Inspection? @relation(fields: [inspectionId], references: [id], onDelete: SetNull)
+
+  @@index([industryId, detectedAt])
+  @@index([severity, dispositionState])
+}
+
+// ── Monitoring streams ─────────────────────────────────────────────────
+
+model MonitoringStation {
+  id         String                @id @default(cuid())
+  type       MonitoringStationType
+  industryId String?
+  name       String
+  lat        Float?
+  lng        Float?
+  parameters String[]
+  status     String                @default("active")
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+
+  industry    Industry?       @relation(fields: [industryId], references: [id], onDelete: SetNull)
+  readings    SensorReading[]
+  exceedances Exceedance[]
+  labSamples  LabSample[]
+
+  @@index([type])
+  @@index([industryId])
+}
+
+model SensorReading {
+  id        String         @id @default(cuid())
+  stationId String
+  parameter String
+  value     Float
+  unit      String
+  timestamp DateTime
+  validity  SensorValidity @default(VALID)
+
+  station     MonitoringStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  exceedances Exceedance[]
+
+  @@index([stationId, parameter, timestamp])
+}
+
+model Exceedance {
+  id                  String           @id @default(cuid())
+  stationId           String
+  readingId           String?
+  parameter           String
+  observedValue       Float
+  normValue           Float
+  breachMagnitude     Float
+  severity            ViolationSeverity
+  detectedAt          DateTime         @default(now())
+  dispositionState    DispositionState @default(PENDING)
+  dispositionActorId  String?
+  dispositionAt       DateTime?
+  dispositionNotes    String?
+
+  station          MonitoringStation @relation(fields: [stationId],          references: [id], onDelete: Cascade)
+  reading          SensorReading?    @relation(fields: [readingId],          references: [id], onDelete: SetNull)
+  dispositionActor User?             @relation(fields: [dispositionActorId], references: [id], onDelete: SetNull)
+
+  @@index([stationId, detectedAt])
+  @@index([dispositionState, severity])
+}
+
+model LabSample {
+  id            String   @id @default(cuid())
+  stationId     String?
+  industryId    String?
+  collectedAt   DateTime
+  parameters    Json     @default("{}")
+  reportFileUrl String?
+  createdAt     DateTime @default(now())
+
+  station  MonitoringStation? @relation(fields: [stationId],  references: [id], onDelete: SetNull)
+  industry Industry?          @relation(fields: [industryId], references: [id], onDelete: SetNull)
+
+  @@index([stationId, collectedAt])
+}
+
+// ── CETP ────────────────────────────────────────────────────────────────
+
+model Cetp {
+  id                String  @id @default(cuid())
+  name              String
+  capacityMld       Float
+  district          String?
+  memberUnitsCount  Int?
+  hasOnlineCeqms    Boolean @default(false)
+  spraydryerUnits   Int?
+
+  reports CetpMonitoringReport[]
+}
+
+model CetpMonitoringReport {
+  id                       String   @id @default(cuid())
+  cetpId                   String
+  monthOf                  DateTime
+  inletNorms               Json
+  finalEffluentStds        Json
+  observedInlet            Json
+  observedFinal            Json
+  bypassMld                Float?
+  hazardousWasteStorageMt  Float?
+  hazardousWasteDisposedMt Float?
+  reportFileUrl            String?
+  createdAt                DateTime @default(now())
+
+  cetp Cetp @relation(fields: [cetpId], references: [id], onDelete: Cascade)
+
+  @@index([cetpId, monthOf])
+}
+
+// ── Enforcement ────────────────────────────────────────────────────────
+
+model EnforcementAction {
+  id              String                @id @default(cuid())
+  industryId      String
+  type            EnforcementActionType
+  draftedById     String
+  draftedAt       DateTime              @default(now())
+  evidence        Json                  @default("{}")
+  violationIds    String[]
+  state           MakerCheckerState     @default(DRAFT)
+  reviewedById    String?
+  reviewedAt      DateTime?
+  reviewerNotes   String?
+  letterFileUrl   String?
+  deliveryChannel String?
+  deliveryStatus  String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  industry  Industry @relation(fields: [industryId],   references: [id], onDelete: Cascade)
+  draftedBy User     @relation("EnforcementMaker",   fields: [draftedById], references: [id], onDelete: Restrict)
+  reviewedBy User?   @relation("EnforcementChecker", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([industryId])
+  @@index([state, draftedAt])
+}
+
+// ── Citizen complaints ─────────────────────────────────────────────────
+
+model Complaint {
+  id           String           @id @default(cuid())
+  channel      ComplaintChannel
+  receivedAt   DateTime         @default(now())
+  complainant  Json
+  lat          Float?
+  lng          Float?
+  category     String?
+  severity     ViolationSeverity @default(MINOR)
+  description  String
+  attachments  Json             @default("[]")
+  industryId   String?
+  state        ComplaintState   @default(NEW)
+  assignedToId String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  industry   Industry?         @relation(fields: [industryId], references: [id], onDelete: SetNull)
+  assignedTo User?             @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+  responses  ComplaintResponse[]
+
+  @@index([state, receivedAt])
+  @@index([industryId])
+}
+
+model ComplaintResponse {
+  id            String   @id @default(cuid())
+  complaintId   String
+  respondedById String
+  respondedAt   DateTime @default(now())
+  message       String
+  action        String?
+
+  complaint   Complaint @relation(fields: [complaintId],   references: [id], onDelete: Cascade)
+  respondedBy User      @relation(fields: [respondedById], references: [id], onDelete: Restrict)
+
+  @@index([complaintId])
+}
+
+// ── AI / chat / RAG ────────────────────────────────────────────────────
+
+model ChatThread {
+  id            String   @id @default(cuid())
+  userId        String
+  title         String?
+  createdAt     DateTime @default(now())
+  lastMessageAt DateTime @default(now())
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+
+  @@index([userId, lastMessageAt])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  threadId  String
+  role      String   // "user" | "assistant" | "system"
+  content   String
+  toolCalls Json     @default("[]")
+  createdAt DateTime @default(now())
+
+  thread ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+}
+
+model KnowledgeDocument {
+  id         String              @id @default(cuid())
+  title      String
+  sourceType KnowledgeSourceType
+  tags       String[]
+  fileUrl    String?
+  createdAt  DateTime            @default(now())
+
+  chunks KnowledgeChunk[]
+}
+
+model KnowledgeChunk {
+  id         String                       @id @default(cuid())
+  documentId String
+  chunkText  String
+  // Vector column added via raw SQL in migration — Prisma cannot represent
+  // pgvector natively yet. Embedding ops happen in raw queries (slice 7).
+
+  document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+}
+
+// ── Notifications & broadcasts ─────────────────────────────────────────
+
+model Notification {
+  id        String               @id @default(cuid())
+  userId    String
+  category  NotificationCategory
+  priority  NotificationPriority @default(MEDIUM)
+  payload   Json                 @default("{}")
+  readAt    DateTime?
+  createdAt DateTime             @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+}
+
+model Broadcast {
+  id        String   @id @default(cuid())
+  sentById  String
+  audience  Json     // { roles?: Role[], regions?: string[] }
+  title     String
+  body      String
+  sentAt    DateTime @default(now())
+
+  sentBy User @relation(fields: [sentById], references: [id], onDelete: Restrict)
+
+  @@index([sentAt])
+}
