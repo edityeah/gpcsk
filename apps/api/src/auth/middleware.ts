@@ -3,9 +3,11 @@ import { ROLES, type Role } from '@gpcsk/shared'
 import { verifyToken, type TokenPayload } from './jwt.js'
 import { env } from '../env.js'
 
-declare module 'express-serve-static-core' {
-  interface Request {
-    auth?: TokenPayload
+declare global {
+  namespace Express {
+    interface Request {
+      auth?: TokenPayload
+    }
   }
 }
 
