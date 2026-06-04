@@ -3,11 +3,13 @@ import { render, screen, act } from '@testing-library/react'
 import { AppProvider, useApp } from './AppContext.js'
 
 function Probe() {
-  const { screen: s, setScreen } = useApp()
+  const { screen: s, navigate, goBack } = useApp()
   return (
     <div>
       <span data-testid="screen">{s}</span>
-      <button onClick={() => setScreen('login')}>go</button>
+      <button onClick={() => navigate('login')}>go-login</button>
+      <button onClick={() => navigate('phone_entry')}>go-phone</button>
+      <button onClick={goBack}>go-back</button>
     </div>
   )
 }
@@ -18,9 +20,18 @@ describe('AppContext', () => {
     expect(screen.getByTestId('screen')).toHaveTextContent('splash')
   })
 
-  it('transitions screens via setScreen', () => {
+  it('navigates screens via navigate()', () => {
     render(<AppProvider><Probe /></AppProvider>)
-    act(() => screen.getByText('go').click())
+    act(() => screen.getByText('go-login').click())
+    expect(screen.getByTestId('screen')).toHaveTextContent('login')
+  })
+
+  it('goBack() pops the history stack', () => {
+    render(<AppProvider><Probe /></AppProvider>)
+    act(() => screen.getByText('go-login').click())
+    act(() => screen.getByText('go-phone').click())
+    expect(screen.getByTestId('screen')).toHaveTextContent('phone_entry')
+    act(() => screen.getByText('go-back').click())
     expect(screen.getByTestId('screen')).toHaveTextContent('login')
   })
 })

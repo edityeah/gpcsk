@@ -1,0 +1,57 @@
+{
+  "appName": "गुजरात प्रदूषण नियंत्रण समीक्षा केंद्र",
+  "appNameShort": "GPCSK",
+  "language": {
+    "title": "अपनी भाषा चुनें",
+    "english": "English",
+    "gujarati": "ગુજરાતી"
+  },
+  "splash": {
+    "tagline": "AI-संचालित सक्रिय प्रदूषण निगरानी"
+  },
+  "login": {
+    "title": "साइन इन करें",
+    "subtitle": "GPCSK में आपका स्वागत है",
+    "phone": "फोन से जारी रखें",
+    "xgn": "XGN से साइन इन करें",
+    "demo": "डेमो: भूमिका चुनें"
+  },
+  "phone": {
+    "enterTitle": "अपना पंजीकृत फोन दर्ज करें",
+    "enterPlaceholder": "10 अंकों का फोन नंबर",
+    "sendOtp": "OTP भेजें",
+    "otpTitle": "OTP दर्ज करें",
+    "otpSubtitle": "हमने 4 अंकों का कोड भेजा है (डेमो: 1234)",
+    "verify": "सत्यापित करें",
+    "invalidOtp": "अमान्य OTP",
+    "userNotFound": "इस फोन के लिए कोई GPCSK खाता नहीं मिला"
+  },
+  "xgn": {
+    "redirecting": "XGN पोर्टल पर पुनर्निर्देशित हो रहा है…",
+    "verifying": "आपका XGN सत्र सत्यापित हो रहा है…",
+    "selectId": "डेमो XGN ID",
+    "continue": "जारी रखें"
+  },
+  "demo": {
+    "title": "डेमो भूमिका चयनकर्ता",
+    "subtitle": "साइन इन करने के लिए भूमिका चुनें। केवल विकास के दौरान उपलब्ध है।"
+  },
+  "roles": {
+    "CONSENT_OFFICER": "सहमति अधिकारी",
+    "MONITORING_OFFICER": "निगरानी अधिकारी",
+    "INSPECTION_ENFORCEMENT_OFFICER": "निरीक्षण और प्रवर्तन अधिकारी",
+    "COMPLAINTS_OFFICER": "शिकायत अधिकारी",
+    "SENIOR_REVIEWER": "वरिष्ठ समीक्षक"
+  },
+  "home": {
+    "greeting": "नमस्ते, {{name}}",
+    "askAi": "प्रदूषण डेटा, उल्लंघन, शिकायतें, सहमति आवेदन के बारे में पूछें…",
+    "placeholder": "अंग्रेजी या गुजराती में संदेश टाइप करें"
+  },
+  "common": {
+    "back": "वापस",
+    "next": "अगला",
+    "loading": "लोड हो रहा है…",
+    "signOut": "साइन आउट"
+  }
+}
