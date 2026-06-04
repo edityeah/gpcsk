@@ -25,7 +25,7 @@ describe('api', () => {
     const fetchMock = global.fetch as ReturnType<typeof vi.fn>
     fetchMock.mockResolvedValueOnce(new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } }))
     await api('/api/auth/phone/verify-otp', { method: 'POST', body: { phone: '9000000005', otp: '1234' }, token: 'tkn' })
-    const [, init] = fetchMock.mock.calls[0]
+    const [, init] = fetchMock.mock.calls[0]!
     expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer tkn')
     expect(init.body).toBe(JSON.stringify({ phone: '9000000005', otp: '1234' }))
   })
