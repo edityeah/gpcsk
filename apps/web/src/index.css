@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; }
+body { font-family: 'Inter', 'Noto Sans Gujarati', 'Noto Sans Devanagari', system-ui, sans-serif; }
+
+/* Scrollbar — subtle */
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.18); border-radius: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+.tricolor-strip { background: linear-gradient(to right, #FF9933 33%, #FFFFFF 33% 66%, #138808 66%); height: 4px; }
+
+.badge { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-pill text-xs font-medium; }
+.badge-ok    { @apply bg-ok-light text-ok; }
+.badge-warn  { @apply bg-warn-light text-warn; }
+.badge-danger{ @apply bg-danger-light text-danger; }
+.badge-flag  { @apply bg-flag-light text-flag; }
+.badge-info  { @apply bg-primary-light text-primary; }
+
+.chat-bubble-user { @apply bg-primary text-white rounded-2xl rounded-br-md px-3 py-2 max-w-[80%] self-end animate-bubble-in; }
+.chat-bubble-bot  { @apply bg-slate-100 text-txt-primary rounded-2xl rounded-bl-md px-3 py-2 max-w-[85%] self-start animate-bubble-in; }
+.chip { @apply inline-flex items-center px-3 py-1.5 rounded-pill bg-primary-light text-primary text-sm font-medium border border-bdr-light hover:bg-primary-50 cursor-pointer; }
