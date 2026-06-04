@@ -10,14 +10,13 @@ import SwiftChatLogo from '../components/SwiftChatLogo.js'
 import { type AuthUser } from '../context/AuthContext.js'
 import { useAuth } from '../context/AuthContext.js'
 
-const DEMO_BY_ROLE: Record<string, { id: string; name: string }> = {
-  consent_officer:                { id: 'XGN-CO-001',  name: 'Anjali Patel (Consent Officer)' },
-  monitoring_officer:             { id: 'XGN-MO-001',  name: 'Rohit Solanki (Monitoring Officer)' },
-  inspection_enforcement_officer: { id: 'XGN-IEO-001', name: 'Mehul Joshi (Inspection & Enforcement)' },
-  complaints_officer:             { id: 'XGN-CMP-001', name: 'Priya Shah (Complaints Officer)' },
-  senior_reviewer:                { id: 'XGN-SR-001',  name: 'Dr. K. Trivedi (Senior Reviewer / Member Secretary)' },
-}
-const DEFAULT_ROLE = 'senior_reviewer'
+const DEMO_USERS: Array<{ id: string; name: string; role: string }> = [
+  { id: 'XGN-CO-001',  name: 'Anjali Patel',   role: 'Consent Officer' },
+  { id: 'XGN-MO-001',  name: 'Rohit Solanki',  role: 'Monitoring Officer' },
+  { id: 'XGN-IEO-001', name: 'Mehul Joshi',    role: 'Inspection & Enforcement Officer' },
+  { id: 'XGN-CMP-001', name: 'Priya Shah',     role: 'Complaints Officer' },
+  { id: 'XGN-SR-001',  name: 'Dr. K. Trivedi', role: 'Senior Reviewer / Member Secretary' },
+]
 
 export function XgnRedirectPage() {
   const { goBack, navigate, showToast } = useApp()
@@ -28,9 +27,11 @@ export function XgnRedirectPage() {
   const [captcha, setCaptcha] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const demoCreds = DEMO_BY_ROLE[DEFAULT_ROLE] ?? { id: 'XGN-SR-001', name: 'Dr. K. Trivedi (Senior Reviewer)' }
-
-  function fillDemo() { setXgnId(demoCreds.id); setPassword('Demo@123'); setCaptcha('A8K2P') }
+  function fillDemo(id: string) {
+    setXgnId(id)
+    setPassword('Demo@123')
+    setCaptcha('A8K2P')
+  }
 
   async function submit() {
     if (!xgnId || !password) { showToast({ kind: 'warn', text: 'Enter XGN ID and password' }); return }
@@ -87,7 +88,7 @@ export function XgnRedirectPage() {
             <div>
               <label className="block text-xs font-medium text-txt-secondary mb-1">XGN ID</label>
               <input value={xgnId} onChange={e => setXgnId(e.target.value.toUpperCase())}
-                className="w-full px-3 py-2 border border-bdr-light rounded outline-none focus:border-primary" placeholder={demoCreds.id} />
+                className="w-full px-3 py-2 border border-bdr-light rounded outline-none focus:border-primary" placeholder="XGN-XX-001" />
             </div>
             <div>
               <label className="block text-xs font-medium text-txt-secondary mb-1">Password</label>
@@ -105,9 +106,31 @@ export function XgnRedirectPage() {
             <button onClick={submit} disabled={busy} className="w-full py-2.5 rounded bg-primary text-white font-medium hover:bg-primary-dark disabled:opacity-50">
               {busy ? 'Verifying…' : 'Sign in'}
             </button>
-            <button onClick={fillDemo} className="w-full py-2 text-xs text-primary-dark hover:underline">
-              Use demo credentials · <b>{demoCreds.name}</b>
-            </button>
+
+            <div className="pt-3 mt-1 border-t border-bdr-light">
+              <div className="text-[10px] font-semibold text-txt-tertiary uppercase tracking-wider mb-2">Use demo credentials</div>
+              <div className="grid grid-cols-1 gap-1.5">
+                {DEMO_USERS.map(u => {
+                  const active = xgnId === u.id
+                  return (
+                    <button key={u.id} onClick={() => fillDemo(u.id)}
+                      className={`flex items-center gap-2 text-left px-2.5 py-1.5 rounded-lg border transition ${
+                        active
+                          ? 'border-primary bg-primary-light'
+                          : 'border-bdr-light bg-[#F8FAFC] hover:bg-primary-light hover:border-primary'
+                      }`}>
+                      <div className="font-mono text-[11px] font-bold text-primary-dark w-[78px] flex-shrink-0">{u.id}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] font-semibold text-txt-primary truncate">{u.name}</div>
+                        <div className="text-[10px] text-txt-secondary truncate">{u.role}</div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="text-[10px] text-txt-tertiary text-center mt-2">Password <span className="font-mono font-bold">Demo@123</span> · Captcha <span className="font-mono font-bold">A8K2P</span></div>
+            </div>
+
             <button onClick={goBack} className="w-full py-1 text-xs text-txt-secondary hover:text-txt-primary">← Back to login</button>
           </div>
           <div className="px-6 py-3 bg-slate-50 border-t border-bdr-light text-xs text-txt-tertiary text-center">
