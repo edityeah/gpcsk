@@ -1,0 +1,57 @@
+{
+  "appName": "ગુજરાત પ્રદૂષણ નિયંત્રણ સમીક્ષા કેન્દ્ર",
+  "appNameShort": "GPCSK",
+  "language": {
+    "title": "તમારી ભાષા પસંદ કરો",
+    "english": "English",
+    "gujarati": "ગુજરાતી"
+  },
+  "splash": {
+    "tagline": "AI-સંચાલિત સક્રિય પ્રદૂષણ દેખરેખ"
+  },
+  "login": {
+    "title": "સાઇન ઇન કરો",
+    "subtitle": "GPCSK માં તમારું સ્વાગત છે",
+    "phone": "ફોન વડે ચાલુ રાખો",
+    "xgn": "XGN વડે સાઇન ઇન કરો",
+    "demo": "ડેમો: ભૂમિકા પસંદ કરો"
+  },
+  "phone": {
+    "enterTitle": "તમારો નોંધાયેલ ફોન દાખલ કરો",
+    "enterPlaceholder": "10-અંકનો ફોન નંબર",
+    "sendOtp": "OTP મોકલો",
+    "otpTitle": "OTP દાખલ કરો",
+    "otpSubtitle": "અમે 4-અંકનો કોડ મોકલ્યો છે (ડેમો: 1234)",
+    "verify": "ચકાસો",
+    "invalidOtp": "અમાન્ય OTP",
+    "userNotFound": "આ ફોન માટે કોઈ GPCSK ખાતું મળ્યું નથી"
+  },
+  "xgn": {
+    "redirecting": "XGN પોર્ટલ પર રીડાયરેક્ટ થઈ રહ્યું છે…",
+    "verifying": "તમારું XGN સત્ર ચકાસી રહ્યા છે…",
+    "selectId": "ડેમો XGN ID",
+    "continue": "ચાલુ રાખો"
+  },
+  "demo": {
+    "title": "ડેમો ભૂમિકા પસંદગીકાર",
+    "subtitle": "સાઇન ઇન કરવા માટે ભૂમિકા પસંદ કરો. ફક્ત વિકાસ દરમિયાન જ ઉપલબ્ધ છે."
+  },
+  "roles": {
+    "CONSENT_OFFICER": "સંમતિ અધિકારી",
+    "MONITORING_OFFICER": "દેખરેખ અધિકારી",
+    "INSPECTION_ENFORCEMENT_OFFICER": "નિરીક્ષણ અને અમલીકરણ અધિકારી",
+    "COMPLAINTS_OFFICER": "ફરિયાદ અધિકારી",
+    "SENIOR_REVIEWER": "વરિષ્ઠ સમીક્ષક"
+  },
+  "home": {
+    "greeting": "નમસ્તે, {{name}}",
+    "askAi": "પ્રદૂષણ ડેટા, ઉલ્લંઘનો, ફરિયાદો, સંમતિ અરજીઓ વિશે પૂછો…",
+    "placeholder": "અંગ્રેજી અથવા ગુજરાતીમાં સંદેશ લખો"
+  },
+  "common": {
+    "back": "પાછળ",
+    "next": "આગળ",
+    "loading": "લોડ થઈ રહ્યું છે…",
+    "signOut": "સાઇન આઉટ"
+  }
+}

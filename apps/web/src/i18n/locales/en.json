@@ -1,0 +1,57 @@
+{
+  "appName": "Gujarat Pollution Control Samiksha Kendra",
+  "appNameShort": "GPCSK",
+  "language": {
+    "title": "Choose your language",
+    "english": "English",
+    "gujarati": "ગુજરાતી (Gujarati)"
+  },
+  "splash": {
+    "tagline": "Proactive pollution oversight, powered by AI"
+  },
+  "login": {
+    "title": "Sign in",
+    "subtitle": "Welcome to GPCSK",
+    "phone": "Continue with Phone",
+    "xgn": "Sign in with XGN",
+    "demo": "Demo: pick a role"
+  },
+  "phone": {
+    "enterTitle": "Enter your registered phone",
+    "enterPlaceholder": "10-digit phone number",
+    "sendOtp": "Send OTP",
+    "otpTitle": "Enter the OTP",
+    "otpSubtitle": "We've sent a 4-digit code (demo: 1234)",
+    "verify": "Verify",
+    "invalidOtp": "Invalid OTP",
+    "userNotFound": "No GPCSK account for this phone"
+  },
+  "xgn": {
+    "redirecting": "Redirecting to XGN portal…",
+    "verifying": "Verifying your XGN session…",
+    "selectId": "Demo XGN ID",
+    "continue": "Continue"
+  },
+  "demo": {
+    "title": "Demo Role Picker",
+    "subtitle": "Pick a role to sign in as. This is only available in development."
+  },
+  "roles": {
+    "CONSENT_OFFICER": "Consent Officer",
+    "MONITORING_OFFICER": "Monitoring Officer",
+    "INSPECTION_ENFORCEMENT_OFFICER": "Inspection & Enforcement Officer",
+    "COMPLAINTS_OFFICER": "Complaints Officer",
+    "SENIOR_REVIEWER": "Senior Reviewer"
+  },
+  "home": {
+    "greeting": "Namaste, {{name}}",
+    "askAi": "Ask me about pollution data, exceedances, complaints, consent applications…",
+    "placeholder": "Type a message in English or Gujarati"
+  },
+  "common": {
+    "back": "Back",
+    "next": "Next",
+    "loading": "Loading…",
+    "signOut": "Sign out"
+  }
+}
