@@ -3,6 +3,7 @@ import cors from 'cors'
 import pinoHttp from 'pino-http'
 import { env } from './env.js'
 import { logger } from './logger.js'
+import { authRouter } from './auth/router.js'
 
 export function buildApp(): Express {
   const app = express()
@@ -11,6 +12,7 @@ export function buildApp(): Express {
   app.use(pinoHttp({ logger }))
 
   app.get('/health', (_req, res) => res.json({ status: 'ok', ts: Date.now() }))
+  app.use('/api/auth', authRouter)
 
   return app
 }
