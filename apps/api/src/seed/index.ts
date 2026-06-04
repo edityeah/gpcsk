@@ -2,6 +2,8 @@ import { prisma } from '../db.js'
 import { seedReference } from './reference.js'
 import { seedIndustries } from './industries.js'
 import { seedDemoUsers } from './users.js'
+import { seedConsents } from './consents.js'
+import { seedInspections } from './inspections.js'
 import { logger } from '../logger.js'
 
 async function main() {
@@ -26,8 +28,22 @@ async function main() {
 
   logger.info('seeding demo users…')
   await seedDemoUsers(prisma)
-  const count = await prisma.user.count()
-  logger.info(`done. users now: ${count}`)
+  const userCount = await prisma.user.count()
+  logger.info(`done. users now: ${userCount}`)
+
+  logger.info('seeding consent applications…')
+  await seedConsents(prisma)
+  const consentCount = await prisma.consentApplication.count()
+  logger.info(`consents done: ${consentCount} consent applications seeded`)
+
+  logger.info('seeding inspections + violations…')
+  await seedInspections(prisma)
+  const [inspectionCount, violationCount] = await Promise.all([
+    prisma.inspection.count(),
+    prisma.violation.count(),
+  ])
+  logger.info(`inspections done: ${inspectionCount} inspections, ${violationCount} violations seeded`)
+
   await prisma.$disconnect()
 }
 
