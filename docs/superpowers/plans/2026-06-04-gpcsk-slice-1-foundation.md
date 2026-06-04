@@ -183,16 +183,16 @@ trim_trailing_whitespace = false
 
 ```bash
 # === Database ===
-DATABASE_URL=postgresql://gpcsk:gpcsk_dev@localhost:5433/gpcsk?schema=public
+DATABASE_URL=postgresql://gpcsk:gpcsk_dev@localhost:5434/gpcsk?schema=public
 
 # === API ===
-API_PORT=8000
+API_PORT=8001
 API_JWT_SECRET=replace-me-in-prod-32-bytes-min
 API_JWT_TTL_HOURS=24
-CORS_ALLOWED_ORIGINS=http://localhost:3000
+CORS_ALLOWED_ORIGINS=http://localhost:3001
 
 # === Web ===
-VITE_API_URL=http://localhost:8000
+VITE_API_URL=http://localhost:8001
 
 # === OpenAI (Slice 7 — RAG + chat) ===
 OPENAI_API_KEY=sk-...
@@ -259,7 +259,7 @@ services:
       POSTGRES_PASSWORD: gpcsk_dev
       POSTGRES_DB: gpcsk
     ports:
-      - "5433:5432"
+      - "5434:5432"
     volumes:
       - gpcsk-pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -553,10 +553,10 @@ import { z } from 'zod'
 
 const Env = z.object({
   DATABASE_URL: z.string().url(),
-  API_PORT: z.coerce.number().int().positive().default(8000),
+  API_PORT: z.coerce.number().int().positive().default(8001),
   API_JWT_SECRET: z.string().min(16),
   API_JWT_TTL_HOURS: z.coerce.number().int().positive().default(24),
-  CORS_ALLOWED_ORIGINS: z.string().default('http://localhost:3000'),
+  CORS_ALLOWED_ORIGINS: z.string().default('http://localhost:3001'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 })
 
@@ -624,9 +624,9 @@ cp .env.example .env
 ```
 
 Then run: `pnpm --filter @gpcsk/api dev`
-Expected: `GPCSK API listening on :8000` within ~2 seconds.
+Expected: `GPCSK API listening on :8001` within ~2 seconds.
 
-In a second terminal, run: `curl -s http://localhost:8000/health | jq`
+In a second terminal, run: `curl -s http://localhost:8001/health | jq`
 Expected: `{ "status": "ok", "ts": <number> }`
 
 Stop the dev server with Ctrl-C.
@@ -2044,7 +2044,7 @@ git commit -m "feat(api): db:seed CLI for demo users"
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview --port 3000",
+    "preview": "vite preview --port 3001",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
@@ -2116,8 +2116,8 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  server: { port: 3000, host: '127.0.0.1' },
-  preview: { port: 3000, host: '127.0.0.1' },
+  server: { port: 3001, host: '127.0.0.1' },
+  preview: { port: 3001, host: '127.0.0.1' },
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
@@ -2296,7 +2296,7 @@ Expected: `apps/web/node_modules/` populated.
 - [ ] **Step 13: Run the web dev server**
 
 Run: `pnpm --filter @gpcsk/web dev`
-Expected: Vite prints `Local: http://127.0.0.1:3000`. Visit it in a browser — see the tricolor strip + heading + "Foundation slice running." subtitle.
+Expected: Vite prints `Local: http://127.0.0.1:3001`. Visit it in a browser — see the tricolor strip + heading + "Foundation slice running." subtitle.
 
 Stop the dev server with Ctrl-C.
 
@@ -2709,7 +2709,7 @@ interface ApiOptions {
   token?: string
 }
 
-const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8001'
 
 export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
   const method = opts.method ?? 'GET'
@@ -3513,16 +3513,16 @@ Expected: 5 users in DB.
 - [ ] **Step 2: Start the API**
 
 In terminal A: `pnpm --filter @gpcsk/api dev`
-Expected: `GPCSK API listening on :8000`.
+Expected: `GPCSK API listening on :8001`.
 
 - [ ] **Step 3: Start the web**
 
 In terminal B: `pnpm --filter @gpcsk/web dev`
-Expected: `Local: http://127.0.0.1:3000`.
+Expected: `Local: http://127.0.0.1:3001`.
 
 - [ ] **Step 4: Walk the phone OTP path**
 
-1. Open `http://127.0.0.1:3000`.
+1. Open `http://127.0.0.1:3001`.
 2. See the Splash for ~1.5s → Language picker.
 3. Click "English".
 4. Click "Continue with Phone".
@@ -3682,10 +3682,10 @@ services:
     depends_on:
       db: { condition: service_healthy }
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8001:8000"
     environment:
       DATABASE_URL: postgresql://gpcsk:${POSTGRES_PASSWORD}@db:5432/gpcsk?schema=public
-      API_PORT: "8000"
+      API_PORT: "8001"
       API_JWT_SECRET: ${API_JWT_SECRET:?set API_JWT_SECRET in .env}
       API_JWT_TTL_HOURS: "24"
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?set CORS_ALLOWED_ORIGINS in .env}
@@ -3701,7 +3701,7 @@ services:
         VITE_API_URL: ${VITE_API_URL:?set VITE_API_URL in .env}
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3001:3000"
     networks: [gpcsk]
 
 volumes:
@@ -3766,7 +3766,7 @@ pnpm --filter @gpcsk/api run db:seed
 pnpm dev
 ```
 
-Then open `http://127.0.0.1:3000`. Sign in with phone `9000000005` + OTP `1234` (Senior Reviewer), or use the demo role picker.
+Then open `http://127.0.0.1:3001`. Sign in with phone `9000000005` + OTP `1234` (Senior Reviewer), or use the demo role picker.
 
 ## Documentation
 

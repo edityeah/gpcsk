@@ -37,8 +37,8 @@ Internet ──HTTPS──► Cloudflare edge ──tunnel──► cloudflared 
                           ┌───────────────────────────┼───────────────────────────┐
                           │                  Docker Compose                        │
                           │                                                        │
-                          │  web   — Vite build served by nginx, 127.0.0.1:3000   │
-                          │  api   — Node/Express, 127.0.0.1:8000                 │
+                          │  web   — Vite build served by nginx, 127.0.0.1:3001   │
+                          │  api   — Node/Express, 127.0.0.1:8001                 │
                           │  db    — postgres:16-alpine + pgvector, internal      │
                           │                                                        │
                           └────────────────────────────────────────────────────────┘
