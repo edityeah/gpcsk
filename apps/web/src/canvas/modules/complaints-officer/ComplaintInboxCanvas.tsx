@@ -1,5 +1,11 @@
-// ComplaintInboxCanvas — Complaints Officer
-// Lists complaints from /api/complaints, supports filters, expandable row with thread, Assign & Reply actions.
+/**
+ * ComplaintInboxCanvas — Complaints Officer
+ *
+ * Lists complaints from /api/complaints (returns Complaint[] directly, not wrapped),
+ * supports filters, expandable row with thread, Assign + Reply actions.
+ *
+ * API enums are UPPERCASE; we render them via human-readable label maps.
+ */
 
 import { useEffect, useState, useCallback } from 'react'
 import {
@@ -14,127 +20,146 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
+  MapPin,
+  Phone,
+  Mail,
+  Globe,
+  Footprints,
 } from 'lucide-react'
 import { api } from '../../../lib/api.js'
 import { useAuth } from '../../../context/AuthContext.js'
 import { useApp } from '../../../context/AppContext.js'
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── API shape (uppercase enums, matching apps/api/src/complaints/router.ts) ─
+
+type ComplaintState = 'NEW' | 'ASSIGNED' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED' | 'DUPLICATE'
+type Severity = 'MINOR' | 'MAJOR' | 'CRITICAL'
+type Channel = 'WEB' | 'PHONE' | 'EMAIL' | 'WALK_IN'
 
 interface ComplaintResponse {
   id: string
-  respondedBy: string
+  respondedById: string
   respondedAt: string
   message: string
-  action?: string
+  action?: string | null
+  respondedBy?: { id: string; name: string } | null
 }
 
 interface Complaint {
   id: string
-  channel: 'web' | 'phone' | 'email' | 'walk-in'
+  channel: Channel
   receivedAt: string
-  complainant?: { name?: string; phone?: string }
-  location?: { district?: string; taluka?: string }
-  category?: string
-  severity?: 'low' | 'medium' | 'high' | 'critical'
+  complainant?: { name?: string; phone?: string; email?: string; anonymous?: boolean } | null
+  lat?: number | null
+  lng?: number | null
+  category?: string | null
+  severity: Severity
   description: string
-  state: 'new' | 'assigned' | 'in_progress' | 'resolved' | 'closed' | 'duplicate'
-  assignedTo?: string
-  responses?: ComplaintResponse[]
+  attachments?: unknown[]
+  industryId?: string | null
+  state: ComplaintState
+  assignedToId?: string | null
   industry?: { id: string; name: string } | null
+  assignedTo?: { id: string; name: string } | null
+  responses?: ComplaintResponse[]
+  createdAt: string
+  updatedAt: string
 }
 
-interface ApiResponse {
-  data: Complaint[]
-  total: number
-  page: number
-  limit: number
+// ─── Display label maps ──────────────────────────────────────────────────────
+
+const SEVERITY_LABEL: Record<Severity, string> = {
+  CRITICAL: 'Critical',
+  MAJOR: 'Major',
+  MINOR: 'Minor',
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const SEVERITY_BADGE: Record<string, string> = {
-  critical: 'bg-danger-light text-danger font-bold',
-  high: 'bg-orange-100 text-orange-700 font-semibold',
-  medium: 'bg-warn-light text-yellow-800',
-  low: 'bg-ok-light text-ok',
+const SEVERITY_BADGE: Record<Severity, string> = {
+  CRITICAL: 'bg-danger-light text-danger font-bold',
+  MAJOR: 'bg-orange-100 text-orange-700 font-semibold',
+  MINOR: 'bg-ok-light text-ok',
 }
 
-const STATE_BADGE: Record<string, string> = {
-  new: 'bg-primary-light text-primary font-bold',
-  assigned: 'bg-indigo-100 text-indigo-700',
-  in_progress: 'bg-warn-light text-yellow-800',
-  resolved: 'bg-ok-light text-ok',
-  closed: 'bg-surface-secondary text-txt-tertiary',
-  duplicate: 'bg-flag-light text-flag',
+const STATE_LABEL: Record<ComplaintState, string> = {
+  NEW: 'New',
+  ASSIGNED: 'Assigned',
+  IN_PROGRESS: 'In progress',
+  RESOLVED: 'Resolved',
+  CLOSED: 'Closed',
+  DUPLICATE: 'Duplicate',
 }
 
-const STATE_ICON: Record<string, React.ReactNode> = {
-  new: <Clock className="w-3 h-3" />,
-  assigned: <User className="w-3 h-3" />,
-  in_progress: <RefreshCw className="w-3 h-3" />,
-  resolved: <CheckCircle2 className="w-3 h-3" />,
-  closed: <CheckCircle2 className="w-3 h-3" />,
-  duplicate: <AlertTriangle className="w-3 h-3" />,
+const STATE_BADGE: Record<ComplaintState, string> = {
+  NEW: 'bg-primary-light text-primary font-bold',
+  ASSIGNED: 'bg-indigo-100 text-indigo-700',
+  IN_PROGRESS: 'bg-warn-light text-yellow-800',
+  RESOLVED: 'bg-ok-light text-ok',
+  CLOSED: 'bg-surface-secondary text-txt-tertiary',
+  DUPLICATE: 'bg-flag-light text-flag',
 }
 
-const CATEGORIES = ['All', 'Air Pollution', 'Water Pollution', 'Noise', 'Hazardous Waste', 'Odour', 'Other']
-const STATES = ['All', 'new', 'assigned', 'in_progress', 'resolved', 'closed']
+const STATE_ICON: Record<ComplaintState, React.ReactNode> = {
+  NEW: <Clock className="w-3 h-3" />,
+  ASSIGNED: <User className="w-3 h-3" />,
+  IN_PROGRESS: <RefreshCw className="w-3 h-3" />,
+  RESOLVED: <CheckCircle2 className="w-3 h-3" />,
+  CLOSED: <CheckCircle2 className="w-3 h-3" />,
+  DUPLICATE: <AlertTriangle className="w-3 h-3" />,
+}
+
+const CHANNEL_ICON: Record<Channel, React.ReactNode> = {
+  WEB: <Globe className="w-3 h-3" />,
+  PHONE: <Phone className="w-3 h-3" />,
+  EMAIL: <Mail className="w-3 h-3" />,
+  WALK_IN: <Footprints className="w-3 h-3" />,
+}
+
+const CHANNEL_LABEL: Record<Channel, string> = {
+  WEB: 'Web',
+  PHONE: 'Phone',
+  EMAIL: 'Email',
+  WALK_IN: 'Walk-in',
+}
+
+// Canonical seed categories; left as plain strings since the API has no closed enum.
+const CATEGORY_FILTERS: Array<{ value: string; label: string }> = [
+  { value: 'ALL',                label: 'All categories' },
+  { value: 'ODOUR',              label: 'Odour' },
+  { value: 'EFFLUENT_DISCHARGE', label: 'Effluent discharge' },
+  { value: 'DUST',               label: 'Dust' },
+  { value: 'NOISE',              label: 'Noise' },
+  { value: 'BURNING',            label: 'Burning' },
+  { value: 'HAZARDOUS_WASTE',    label: 'Hazardous waste' },
+  { value: 'AIR_POLLUTION',      label: 'Air pollution' },
+  { value: 'WATER_POLLUTION',    label: 'Water pollution' },
+  { value: 'OTHER',              label: 'Other' },
+]
+
+const STATE_FILTERS: Array<{ value: 'ALL' | ComplaintState; label: string }> = [
+  { value: 'ALL',         label: 'All states' },
+  { value: 'NEW',         label: 'New' },
+  { value: 'ASSIGNED',    label: 'Assigned' },
+  { value: 'IN_PROGRESS', label: 'In progress' },
+  { value: 'RESOLVED',    label: 'Resolved' },
+  { value: 'CLOSED',      label: 'Closed' },
+  { value: 'DUPLICATE',   label: 'Duplicate' },
+]
+
+function categoryLabel(raw?: string | null): string {
+  if (!raw) return 'Uncategorised'
+  const known = CATEGORY_FILTERS.find(c => c.value === raw)
+  if (known) return known.label
+  return raw.replace(/_/g, ' ').toLowerCase().replace(/^\w/, ch => ch.toUpperCase())
+}
 
 function fmt(iso: string) {
-  const d = new Date(iso)
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-// ─── Seed fallback (offline demo) ────────────────────────────────────────────
-
-const DEMO_COMPLAINTS: Complaint[] = [
-  {
-    id: 'C-001', channel: 'web', receivedAt: new Date(Date.now() - 3600_000).toISOString(),
-    complainant: { name: 'Ramesh Patel', phone: '9876543210' },
-    location: { district: 'Ahmedabad', taluka: 'Vatva' },
-    category: 'Air Pollution', severity: 'high', state: 'new',
-    description: 'Thick black smoke from the stack of the chemical unit at GIDC Vatva Phase 2. It started around 8 AM and the smell is unbearable for nearby residents.',
-    responses: [],
-  },
-  {
-    id: 'C-002', channel: 'phone', receivedAt: new Date(Date.now() - 7_200_000).toISOString(),
-    complainant: { name: 'Fatima Sheikh' },
-    location: { district: 'Surat', taluka: 'Sachin' },
-    category: 'Water Pollution', severity: 'critical', state: 'assigned', assignedTo: 'CO-001',
-    description: 'Effluent from the dye unit is being discharged directly into the drain without any treatment. The water has turned bright red and fish are dying.',
-    responses: [
-      { id: 'R-1', respondedBy: 'CO-001', respondedAt: new Date(Date.now() - 5_000_000).toISOString(), message: 'Complaint received and assigned for inspection.', action: 'Assigned to monitoring team' },
-    ],
-    industry: { id: 'IND-054', name: 'Sachin Dye & Chem Pvt Ltd' },
-  },
-  {
-    id: 'C-003', channel: 'email', receivedAt: new Date(Date.now() - 86_400_000).toISOString(),
-    complainant: { name: 'Anand Mehta' },
-    location: { district: 'Bharuch', taluka: 'Ankleshwar' },
-    category: 'Hazardous Waste', severity: 'medium', state: 'in_progress',
-    description: 'Drums of unidentified chemical waste are stored in the open compound without any containment or labelling. It rained last night and the liquid is seeping into the ground.',
-    responses: [],
-  },
-  {
-    id: 'C-004', channel: 'walk-in', receivedAt: new Date(Date.now() - 172_800_000).toISOString(),
-    complainant: { name: 'Suresh Bhai' },
-    location: { district: 'Valsad', taluka: 'Vapi' },
-    category: 'Noise', severity: 'low', state: 'resolved',
-    description: 'Continuous noise from compressors in the industrial estate even after 10 PM. The noise level is disrupting sleep for the entire colony.',
-    responses: [
-      { id: 'R-2', respondedBy: 'CO-002', respondedAt: new Date(Date.now() - 100_000_000).toISOString(), message: 'Inspection conducted. Unit issued a warning notice. Compressors to be operated only between 7 AM and 9 PM.', action: 'Warning issued' },
-    ],
-  },
-  {
-    id: 'C-005', channel: 'web', receivedAt: new Date(Date.now() - 259_200_000).toISOString(),
-    complainant: { name: 'Geeta Desai' },
-    location: { district: 'Rajkot', taluka: 'Rajkot' },
-    category: 'Air Pollution', severity: 'high', state: 'new',
-    description: 'Ceramic kilns in the industrial area are emitting excessive particulate matter. AQI in the locality has been very poor for the past week.',
-    responses: [],
-  },
-]
+function fmtLatLng(lat?: number | null, lng?: number | null): string | null {
+  if (lat == null || lng == null) return null
+  return `${lat.toFixed(3)}, ${lng.toFixed(3)}`
+}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -155,9 +180,8 @@ function ThreadPanel({ complaint, token, onRefresh }: {
       await api(`/api/complaints/${complaint.id}/assign`, { method: 'POST', token })
       showToast({ kind: 'success', text: 'Complaint assigned to you.' })
       onRefresh()
-    } catch {
-      showToast({ kind: 'warn', text: 'Assign failed — using demo mode.' })
-      onRefresh()
+    } catch (e) {
+      showToast({ kind: 'danger', text: `Assign failed: ${(e as { code?: string }).code ?? 'unknown'}` })
     } finally {
       setAssigning(false)
     }
@@ -176,10 +200,8 @@ function ThreadPanel({ complaint, token, onRefresh }: {
       showToast({ kind: 'success', text: 'Reply sent.' })
       setReplyText('')
       onRefresh()
-    } catch {
-      showToast({ kind: 'warn', text: 'Reply logged in demo mode.' })
-      setReplyText('')
-      onRefresh()
+    } catch (e) {
+      showToast({ kind: 'danger', text: `Reply failed: ${(e as { code?: string }).code ?? 'unknown'}` })
     } finally {
       setSending(false)
     }
@@ -187,19 +209,17 @@ function ThreadPanel({ complaint, token, onRefresh }: {
 
   return (
     <div className="mt-3 space-y-3 animate-bubble-in">
-      {/* Description */}
       <div className="text-[13px] text-txt-primary leading-relaxed bg-surface-secondary rounded-xl p-3">
         {complaint.description}
       </div>
 
-      {/* Thread */}
       {(complaint.responses ?? []).length > 0 && (
         <div className="space-y-2">
           <div className="text-[11px] font-bold uppercase tracking-widest text-txt-tertiary">Thread</div>
           {(complaint.responses ?? []).map(r => (
             <div key={r.id} className="bg-primary-light rounded-xl p-3">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-[11px] font-bold text-primary">{r.respondedBy}</span>
+                <span className="text-[11px] font-bold text-primary">{r.respondedBy?.name ?? r.respondedById}</span>
                 <span className="text-[10px] text-txt-tertiary">{fmt(r.respondedAt)}</span>
               </div>
               <div className="text-[12px] text-txt-primary">{r.message}</div>
@@ -213,9 +233,8 @@ function ThreadPanel({ complaint, token, onRefresh }: {
         </div>
       )}
 
-      {/* Actions */}
       <div className="flex items-center gap-2 pt-1">
-        {complaint.state === 'new' && (
+        {complaint.state === 'NEW' && (
           <button
             onClick={handleAssign}
             disabled={assigning}
@@ -227,7 +246,6 @@ function ThreadPanel({ complaint, token, onRefresh }: {
         )}
       </div>
 
-      {/* Reply box */}
       <form onSubmit={handleReply} className="flex items-center gap-2 border border-bdr rounded-xl p-2">
         <input
           value={replyText}
@@ -256,23 +274,34 @@ export function ComplaintInboxCanvas() {
   const [complaints, setComplaints] = useState<Complaint[]>([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<string | null>(null)
-  const [filterCategory, setFilterCategory] = useState('All')
-  const [filterState, setFilterState] = useState('All')
+  const [filterCategory, setFilterCategory] = useState<string>('ALL')
+  const [filterState, setFilterState] = useState<'ALL' | ComplaintState>('ALL')
   const [search, setSearch] = useState('')
+  const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams()
-      if (filterCategory !== 'All') params.set('category', filterCategory)
-      if (filterState !== 'All') params.set('state', filterState)
-      const res = await api<ApiResponse>(`/api/complaints?${params.toString()}`, {
+      if (filterCategory !== 'ALL') params.set('category', filterCategory)
+      if (filterState !== 'ALL') params.set('state', filterState)
+      // API returns Complaint[] directly. Also tolerate { data: [...] } in case
+      // it changes; some seeds also nest under .complaints or .items.
+      const res = await api<unknown>(`/api/complaints?${params.toString()}`, {
         token: token ?? undefined,
       })
-      setComplaints(res.data ?? [])
-    } catch {
-      showToast({ kind: 'warn', text: 'Using demo data — API not reachable.' })
-      setComplaints(DEMO_COMPLAINTS)
+      const arr: Complaint[] =
+        Array.isArray(res) ? res as Complaint[] :
+        Array.isArray((res as { data?: unknown }).data) ? (res as { data: Complaint[] }).data :
+        Array.isArray((res as { complaints?: unknown }).complaints) ? (res as { complaints: Complaint[] }).complaints :
+        Array.isArray((res as { items?: unknown }).items) ? (res as { items: Complaint[] }).items :
+        []
+      setComplaints(arr)
+      setError(null)
+    } catch (e) {
+      setError((e as { message?: string }).message ?? 'Could not load complaints.')
+      setComplaints([])
+      showToast({ kind: 'danger', text: 'Failed to load complaints from the server.' })
     } finally {
       setLoading(false)
     }
@@ -287,7 +316,7 @@ export function ComplaintInboxCanvas() {
       c.id.toLowerCase().includes(q) ||
       c.description.toLowerCase().includes(q) ||
       (c.complainant?.name ?? '').toLowerCase().includes(q) ||
-      (c.location?.district ?? '').toLowerCase().includes(q) ||
+      (c.industry?.name ?? '').toLowerCase().includes(q) ||
       (c.category ?? '').toLowerCase().includes(q)
     )
   })
@@ -302,7 +331,7 @@ export function ComplaintInboxCanvas() {
         <div className="flex-1">
           <div className="text-[15px] font-bold text-txt-primary">Complaint Inbox</div>
           <div className="text-[11px] text-txt-secondary">
-            {loading ? 'Loading…' : `${visible.length} complaint${visible.length !== 1 ? 's' : ''}`}
+            {loading ? 'Loading…' : `${visible.length} of ${complaints.length} complaint${complaints.length !== 1 ? 's' : ''}`}
           </div>
         </div>
         <button
@@ -328,20 +357,26 @@ export function ComplaintInboxCanvas() {
           onChange={e => setFilterCategory(e.target.value)}
           className="text-[12px] bg-surface-secondary rounded-lg px-2 py-1.5 border border-bdr-light outline-none focus:border-primary text-txt-primary"
         >
-          {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          {CATEGORY_FILTERS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
         </select>
         <select
           value={filterState}
-          onChange={e => setFilterState(e.target.value)}
-          className="text-[12px] bg-surface-secondary rounded-lg px-2 py-1.5 border border-bdr-light outline-none focus:border-primary text-txt-primary capitalize"
+          onChange={e => setFilterState(e.target.value as 'ALL' | ComplaintState)}
+          className="text-[12px] bg-surface-secondary rounded-lg px-2 py-1.5 border border-bdr-light outline-none focus:border-primary text-txt-primary"
         >
-          {STATES.map(s => <option key={s} value={s} className="capitalize">{s === 'All' ? 'All states' : s.replace(/_/g, ' ')}</option>)}
+          {STATE_FILTERS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
       </div>
 
+      {error && (
+        <div className="mx-5 mt-3 px-4 py-2.5 bg-danger-light border border-danger/30 rounded-card text-danger text-[12px]">
+          {error}
+        </div>
+      )}
+
       {/* List */}
       <div className="flex-1 overflow-y-auto px-5 py-3 space-y-2">
-        {loading && (
+        {loading && complaints.length === 0 && (
           <div className="flex items-center justify-center py-12 text-txt-tertiary text-[13px]">
             <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Loading complaints…
           </div>
@@ -349,33 +384,36 @@ export function ComplaintInboxCanvas() {
         {!loading && visible.length === 0 && (
           <div className="flex flex-col items-center justify-center py-12 text-txt-tertiary text-[13px] gap-2">
             <Inbox className="w-8 h-8 opacity-30" />
-            No complaints match your filters.
+            {complaints.length === 0 ? 'No complaints in the inbox yet.' : 'No complaints match your filters.'}
           </div>
         )}
         {!loading && visible.map(c => {
           const isOpen = expanded === c.id
+          const coords = fmtLatLng(c.lat, c.lng)
           return (
             <div
               key={c.id}
               className="bg-white rounded-card border border-bdr-light shadow-card overflow-hidden"
             >
-              {/* Row header — click to expand */}
               <button
                 onClick={() => setExpanded(isOpen ? null : c.id)}
                 className="w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-surface-page/60 transition-colors"
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span className="text-[11px] font-bold text-txt-tertiary">{c.id}</span>
-                    <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] ${SEVERITY_BADGE[c.severity ?? 'low'] ?? ''}`}>
-                      {c.severity ?? 'low'}
+                    <span className="text-[11px] font-bold text-txt-tertiary">{c.id.slice(-8)}</span>
+                    <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] ${SEVERITY_BADGE[c.severity]}`}>
+                      {SEVERITY_LABEL[c.severity]}
                     </span>
-                    <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] ${STATE_BADGE[c.state] ?? ''}`}>
-                      {STATE_ICON[c.state]}{c.state.replace(/_/g, ' ')}
+                    <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] ${STATE_BADGE[c.state]}`}>
+                      {STATE_ICON[c.state]}{STATE_LABEL[c.state]}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-[10px] text-txt-secondary bg-surface-secondary px-2 py-0.5 rounded-full">
+                      {CHANNEL_ICON[c.channel]}{CHANNEL_LABEL[c.channel]}
                     </span>
                     {c.category && (
                       <span className="text-[10px] text-txt-secondary bg-surface-secondary px-2 py-0.5 rounded-full">
-                        {c.category}
+                        {categoryLabel(c.category)}
                       </span>
                     )}
                   </div>
@@ -383,13 +421,23 @@ export function ComplaintInboxCanvas() {
                     {c.description}
                   </div>
                   <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                    {c.complainant?.name && (
+                    {c.complainant?.name && !c.complainant.anonymous && (
                       <span className="text-[11px] text-txt-secondary flex items-center gap-1">
                         <User className="w-3 h-3" /> {c.complainant.name}
                       </span>
                     )}
-                    {c.location?.district && (
-                      <span className="text-[11px] text-txt-secondary">{c.location.district}</span>
+                    {c.complainant?.anonymous && (
+                      <span className="text-[11px] text-txt-tertiary italic">Anonymous</span>
+                    )}
+                    {c.industry?.name && (
+                      <span className="text-[11px] text-primary flex items-center gap-1">
+                        {c.industry.name}
+                      </span>
+                    )}
+                    {coords && (
+                      <span className="text-[11px] text-txt-secondary flex items-center gap-1">
+                        <MapPin className="w-3 h-3" /> {coords}
+                      </span>
                     )}
                     <span className="text-[11px] text-txt-tertiary">{fmt(c.receivedAt)}</span>
                     {(c.responses ?? []).length > 0 && (
@@ -404,7 +452,6 @@ export function ComplaintInboxCanvas() {
                 </div>
               </button>
 
-              {/* Expanded thread */}
               {isOpen && (
                 <div className="px-4 pb-4 border-t border-bdr-light">
                   <ThreadPanel
