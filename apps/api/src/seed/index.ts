@@ -6,6 +6,7 @@ import { seedConsents } from './consents.js'
 import { seedInspections } from './inspections.js'
 import { seedComplaints } from './complaints.js'
 import { seedSensors } from './sensors.js'
+import { seedCetps } from './cetps.js'
 import { seedKnowledge } from './knowledge.js'
 import { logger } from '../logger.js'
 
@@ -62,6 +63,14 @@ async function main() {
     `sensors done: ${stationCount} stations, ${readingCount} readings, ` +
     `${exceedanceCount} exceedances seeded`
   )
+
+  logger.info('seeding CETPs + monthly monitoring reports…')
+  await seedCetps(prisma)
+  const [cetpCount, cetpReportCount] = await Promise.all([
+    prisma.cetp.count(),
+    prisma.cetpMonitoringReport.count(),
+  ])
+  logger.info(`CETPs done: ${cetpCount} CETPs, ${cetpReportCount} monthly reports seeded`)
 
   logger.info('seeding knowledge documents + RAG chunks…')
   await seedKnowledge(prisma)
