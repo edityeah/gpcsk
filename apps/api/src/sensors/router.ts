@@ -121,20 +121,32 @@ sensorsRouter.get('/stations/latest', requireAuth, async (req, res) => {
     ORDER BY s.name, r.parameter
   `
 
+  // Aggregate norms by (stream, parameter). Some parameters carry BOTH a min
+  // and a max in the table (notably pH, which is a range, and noise day/night).
+  // For parameters with multiple rows we take min(all values) as normMin and
+  // max(all values) as normMax; consumers can treat single-bound parameters as
+  // "exceedance when value > normMax" and bidirectional ones (where normMin <
+  // normMax meaningfully) as "exceedance when value is outside [normMin,normMax]".
   const norms = await prisma.norm.findMany({
     select: { parameter: true, stream: true, value: true, unit: true },
   })
-  const normByKey = new Map<string, { value: number; unit: string }>()
+  const normByKey = new Map<string, { normMin: number; normMax: number; unit: string }>()
   for (const n of norms) {
     const key = `${n.stream}|${n.parameter}`
-    if (!normByKey.has(key)) normByKey.set(key, { value: n.value, unit: n.unit })
+    const existing = normByKey.get(key)
+    if (existing) {
+      existing.normMin = Math.min(existing.normMin, n.value)
+      existing.normMax = Math.max(existing.normMax, n.value)
+    } else {
+      normByKey.set(key, { normMin: n.value, normMax: n.value, unit: n.unit })
+    }
   }
 
   const byStation = new Map<string, {
     id: string; name: string; status: string; type: string;
     industry: { id: string; name: string } | null;
     district: string | null;
-    readings: Array<{ parameter: string; value: number; unit: string; norm: number | null; normUnit: string | null; timestamp: string; validity: string }>;
+    readings: Array<{ parameter: string; value: number; unit: string; normMin: number | null; normMax: number | null; normUnit: string | null; timestamp: string; validity: string }>;
   }>()
   for (const row of rows) {
     if (!byStation.has(row.station_id)) {
@@ -151,7 +163,8 @@ sensorsRouter.get('/stations/latest', requireAuth, async (req, res) => {
       parameter: row.parameter,
       value: row.value,
       unit: row.unit,
-      norm: normLookup?.value ?? null,
+      normMin: normLookup?.normMin ?? null,
+      normMax: normLookup?.normMax ?? null,
       normUnit: normLookup?.unit ?? null,
       timestamp: row.timestamp.toISOString(),
       validity: row.validity,

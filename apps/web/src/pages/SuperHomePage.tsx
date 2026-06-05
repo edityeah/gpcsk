@@ -497,7 +497,18 @@ interface GreetingPanelProps {
 function GreetingPanel({ modules, chips, onSend, onVoice }: GreetingPanelProps) {
   const { user } = useAuth()
   const { openCanvas } = useChat()
-  const first = user?.name?.split(' ')[0] ?? 'there'
+  // For names like "Dr. K. Trivedi" we want "Dr. Trivedi" — skip middle initials.
+  // For "Anjali Patel" we want just "Anjali". Honorific is anything ending in "."
+  const greetingName = (() => {
+    const full = user?.name?.trim() ?? ''
+    if (!full) return 'there'
+    const parts = full.split(/\s+/)
+    const hasHonorific = parts[0]?.endsWith('.')
+    if (hasHonorific && parts.length >= 2) {
+      return `${parts[0]} ${parts[parts.length - 1]}`  // "Dr. Trivedi"
+    }
+    return parts[0] ?? full  // "Anjali"
+  })()
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -505,10 +516,10 @@ function GreetingPanel({ modules, chips, onSend, onVoice }: GreetingPanelProps) 
         {/* Greeting */}
         <div className="text-center">
           <div className="text-[12px] font-bold uppercase tracking-[3px] text-primary mb-3">
-            SAATHI · YOUR SKILLING COMPANION
+            SAATHI · YOUR POLLUTION OVERSIGHT COMPANION
           </div>
           <h1 className="text-[26px] md:text-[42px] font-bold text-txt-primary leading-tight">
-            Namaste, {first} <span aria-hidden>👋</span>
+            Namaste, {greetingName} <span aria-hidden>👋</span>
           </h1>
           <h2 className="text-[22px] md:text-[36px] font-bold text-txt-primary leading-tight mt-1">
             what can I help with?

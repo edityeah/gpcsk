@@ -17,7 +17,8 @@ interface Reading {
   parameter: string
   value: number
   unit: string
-  norm: number | null
+  normMin: number | null
+  normMax: number | null
   normUnit: string | null
   timestamp: string
   validity: string
@@ -36,8 +37,24 @@ interface Station {
 type Level = 'ok' | 'warn' | 'critical' | 'offline' | 'unknown'
 
 function readingLevel(r: Reading): Level {
-  if (r.norm == null) return 'unknown'
-  const ratio = r.value / r.norm
+  if (r.normMin == null && r.normMax == null) return 'unknown'
+
+  // Bidirectional parameter (e.g. pH 5.5–9): exceedance is OUTSIDE the band.
+  const hasRange = r.normMin != null && r.normMax != null && r.normMax > r.normMin * 1.05
+  if (hasRange) {
+    const min = r.normMin!
+    const max = r.normMax!
+    if (r.value < min || r.value > max) return 'critical'
+    // Approaching the edge of the band (within 5% of either bound).
+    const span = max - min
+    if (r.value - min < span * 0.1 || max - r.value < span * 0.1) return 'warn'
+    return 'ok'
+  }
+
+  // Single-bound parameter (max only) — e.g. COD ≤ 250.
+  const limit = r.normMax ?? r.normMin
+  if (limit == null) return 'unknown'
+  const ratio = r.value / limit
   if (ratio >= 1) return 'critical'
   if (ratio >= 0.8) return 'warn'
   return 'ok'
@@ -208,16 +225,21 @@ export function OcemsLiveGridCanvas() {
                     <div className="grid grid-cols-3 gap-x-2 gap-y-1.5">
                       {station.readings.map(r => {
                         const lvl = readingLevel(r)
-                        const pct = r.norm ? Math.min(Math.round((r.value / r.norm) * 100), 200) : null
+                        const hasRange = r.normMin != null && r.normMax != null && r.normMax > r.normMin * 1.05
+                        // Label: "7.41 / 5.5–9" for ranges, "181.5 / 250" for single max.
+                        const limitLabel =
+                          hasRange ? `${r.normMin}–${r.normMax}` :
+                          r.normMax != null ? `${r.normMax}` :
+                          r.normMin != null ? `${r.normMin}` : null
                         return (
                           <div key={r.parameter} className="flex flex-col">
                             <span className="text-[9px] uppercase tracking-wider text-txt-tertiary truncate">{r.parameter}</span>
                             <span className={`text-[13px] leading-tight ${READING_STYLES[lvl]}`}>
                               {Number.isFinite(r.value) ? r.value.toFixed(r.value < 10 ? 2 : 1) : '—'}
                             </span>
-                            {r.norm != null && (
+                            {limitLabel != null && (
                               <span className="text-[9px] text-txt-tertiary truncate">
-                                {pct}% of {r.norm}
+                                norm {limitLabel}
                               </span>
                             )}
                           </div>
