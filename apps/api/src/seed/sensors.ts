@@ -269,27 +269,57 @@ function clamp(v: number, min: number, max: number): number {
 }
 
 /**
- * Generate a realistic value for a parameter at a given station + timestamp.
- * About 10% of COD readings are seeded over norm to create exceedances.
+ * Per-station compliance band (deterministic from station id):
+ *   0–69  → clean      (values centred at 40% of norm)
+ *   70–84 → marginal   (centred at 85% of norm — within band, occasionally tips)
+ *   85–94 → exceeding  (centred at 120% — usually over)
+ *   95–99 → severe     (centred at 170% — well over)
+ * pH is treated as a band [normMin..normMax] = [5.5..9]; centre 7.5 for clean,
+ * edges for marginal, outside for exceeding.
+ */
+function stationBand(stationSeed: string): 'clean' | 'marginal' | 'exceeding' | 'severe' {
+  const h = Math.abs(strHash(stationSeed)) % 100
+  if (h < 70) return 'clean'
+  if (h < 85) return 'marginal'
+  if (h < 95) return 'exceeding'
+  return 'severe'
+}
+
+const BAND_MULTIPLIER: Record<'clean' | 'marginal' | 'exceeding' | 'severe', number> = {
+  clean:     0.40,
+  marginal:  0.85,
+  exceeding: 1.20,
+  severe:    1.70,
+}
+
+/**
+ * Generate a realistic value for a parameter at a station + timestamp.
+ * Each station has a fixed compliance band that governs ALL its parameter
+ * readings — so clean stations are clean across the board, exceeding stations
+ * are usually over across the board. This produces the realistic ~70/15/10/5
+ * distribution that real monitoring grids show.
  */
 function genValue(param: string, stationSeed: string, ts: Date): number {
-  const range  = PARAM_RANGES[param]
+  const range = PARAM_RANGES[param]
   if (!range) return 0
-  const seed   = strHash(`${stationSeed}:${param}:${ts.getTime()}`)
-  const rng    = mulberry32(seed)
-  const center = range.norm ?? ((range.min + range.max) / 2)
-  let v = gaussian(rng, center, range.noiseSd)
-  v = clamp(v, range.min, range.max)
-  // Occasionally push above norm to create exceedances (keeps ~10% over for COD/BOD)
-  if (param === 'COD' && rng() < 0.10) {
-    v = clamp(center * (1.05 + rng() * 0.60), range.min, range.max * 1.2)
-  } else if (param === 'BOD' && rng() < 0.08) {
-    v = clamp(center * (1.05 + rng() * 0.50), range.min, range.max * 1.2)
-  } else if (param === 'pH' && rng() < 0.06) {
-    v = rng() < 0.5 ? clamp(5.0 + rng() * 1.0, 4.5, 6.0) : clamp(9.0 + rng() * 1.0, 9.0, 10.0)
-  } else if (param === 'NH3_N' && rng() < 0.07) {
-    v = clamp(center * (1.05 + rng() * 0.45), range.min, range.max * 1.2)
+  const seed  = strHash(`${stationSeed}:${param}:${ts.getTime()}`)
+  const rng   = mulberry32(seed)
+  const norm  = range.norm ?? ((range.min + range.max) / 2)
+  const band  = stationBand(stationSeed)
+
+  // pH: band-aware bidirectional value
+  if (param === 'pH') {
+    if (band === 'clean')     return Math.round((6.5 + rng() * 1.8) * 100) / 100        // 6.5–8.3
+    if (band === 'marginal')  return Math.round((5.9 + rng() * 0.5) * 100) / 100        // 5.9–6.4 (near low edge)
+    if (band === 'exceeding') return rng() < 0.5 ? Math.round((5.0 + rng() * 0.4) * 100) / 100 : Math.round((9.1 + rng() * 0.6) * 100) / 100
+    return rng() < 0.5 ? Math.round((4.0 + rng() * 0.8) * 100) / 100 : Math.round((9.8 + rng() * 1.0) * 100) / 100
   }
+
+  const mult     = BAND_MULTIPLIER[band]
+  const target   = norm * mult
+  // Gaussian noise proportional to target, then clamp to a sane envelope.
+  const sd       = Math.max(range.noiseSd * 0.5, target * 0.06)
+  const v        = clamp(gaussian(rng, target, sd), range.min * 0.3, range.max * 2)
   return Math.round(v * 100) / 100
 }
 
