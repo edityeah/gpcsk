@@ -2,6 +2,9 @@
  * PredictedExceedanceLabCanvas — pick a station; show 7-day series with dashed 24h projection.
  * Linear regression over the last 6 data points to project the next 24 hours.
  * Highlights where the projection crosses the norm.
+ *
+ * Uses /api/sensors/stations?type=OCEMS to list stations,
+ * then /api/sensors/readings?stationId=&parameter=&since= for readings.
  */
 
 import { useState, useEffect, useCallback } from 'react'
@@ -18,16 +21,49 @@ import {
   Legend,
 } from 'recharts'
 import { useAuth } from '../../../context/AuthContext.js'
+import { useApp } from '../../../context/AppContext.js'
 import { api } from '../../../lib/api.js'
 
+// Real API station shape from /api/sensors/stations?type=OCEMS
+interface ApiStation {
+  id: string
+  name: string
+  type: string
+  status: string
+  parameters: string[]
+  industry: {
+    id: string
+    name: string
+    district: { id: string; name: string } | null
+  } | null
+}
+
+interface ApiStationsResponse {
+  stations: ApiStation[]
+}
+
+// Real API reading shape from /api/sensors/readings?stationId=&parameter=&since=
+interface ApiReading {
+  id: string
+  parameter: string
+  value: number
+  unit: string
+  timestamp: string
+  validity: string
+}
+
+interface ApiReadingsResponse {
+  readings: ApiReading[]
+}
+
+// Internal display types
 interface Station {
   id: string
   name: string
-  industry: string
-  district: string
   parameter: string
   unit: string
-  norm: number
+  norm: number | null
+  districtName: string
 }
 
 interface Reading {
@@ -39,30 +75,7 @@ interface ChartPoint {
   label: string
   actual?: number
   projected?: number
-  norm: number
-}
-
-const DEMO_STATIONS: Station[] = [
-  { id: 's1', name: 'Vatva-OCEMS-02',  industry: 'Pushpak Ind',           district: 'Ahmedabad', parameter: 'NOx',  unit: 'µg/m³', norm: 100 },
-  { id: 's2', name: 'Naroda-OCEMS-01', industry: 'Nirma Ltd',              district: 'Ahmedabad', parameter: 'PM10', unit: 'µg/m³', norm: 100 },
-  { id: 's3', name: 'Dahej-OCEMS-01',  industry: 'ONGC Petro additions',   district: 'Bharuch',   parameter: 'VOC',  unit: 'µg/m³', norm: 50  },
-  { id: 's4', name: 'Morbi-OCEMS-01',  industry: 'Kajaria Ceramics',       district: 'Morbi',     parameter: 'PM10', unit: 'µg/m³', norm: 100 },
-  { id: 's5', name: 'Sachin-OCEMS-01', industry: 'Alok Industries',        district: 'Surat',     parameter: 'COD',  unit: 'mg/L',  norm: 250 },
-]
-
-/** Seed deterministic demo readings: 7d × 4 readings/day, gently trending up */
-function makeDemoReadings(norm: number): Reading[] {
-  const readings: Reading[] = []
-  const now = Date.now()
-  const total = 28 // 7d × 4 per day
-  for (let i = 0; i < total; i++) {
-    const ts = now - (total - 1 - i) * 6 * 3600_000
-    const trend = (i / total) * 0.35 // 0→35% drift
-    const noise = (Math.sin(i * 1.9) * 0.08 + Math.cos(i * 3.1) * 0.06)
-    const value = +(norm * (0.55 + trend + noise)).toFixed(1)
-    readings.push({ timestamp: new Date(ts).toISOString(), value })
-  }
-  return readings
+  norm?: number
 }
 
 /** Simple linear regression (least-squares) on last N points → slope, intercept */
@@ -78,13 +91,13 @@ function linearRegression(points: { x: number; y: number }[]): { slope: number; 
   return { slope, intercept }
 }
 
-function buildChartData(readings: Reading[], norm: number): ChartPoint[] {
+function buildChartData(readings: Reading[], norm: number | null): ChartPoint[] {
   if (readings.length === 0) return []
 
   const actual: ChartPoint[] = readings.map(r => ({
     label: new Date(r.timestamp).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit' }),
     actual: r.value,
-    norm,
+    norm: norm ?? undefined,
   }))
 
   // Regression on last 6 readings
@@ -105,7 +118,7 @@ function buildChartData(readings: Reading[], norm: number): ChartPoint[] {
     return {
       label: ts.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit' }),
       projected: Math.max(0, projValue),
-      norm,
+      norm: norm ?? undefined,
     }
   })
 
@@ -121,46 +134,91 @@ function buildChartData(readings: Reading[], norm: number): ChartPoint[] {
 
 export function PredictedExceedanceLabCanvas() {
   const { token } = useAuth()
-  const [stations, setStations] = useState<Station[]>(DEMO_STATIONS)
-  const [selectedId, setSelectedId] = useState<string>(DEMO_STATIONS[0]?.id ?? '')
+  const { showToast } = useApp()
+  const [stations, setStations] = useState<Station[]>([])
+  const [selectedId, setSelectedId] = useState<string>('')
   const [readings, setReadings] = useState<Reading[]>([])
   const [loading, setLoading] = useState(false)
+  const [stationsLoading, setStationsLoading] = useState(true)
   const [open, setOpen] = useState(false)
+  const [selectedParam, setSelectedParam] = useState<string>('COD')
 
   const selectedStation = stations.find(s => s.id === selectedId) ?? stations[0]
 
   const loadStations = useCallback(async () => {
+    if (!token) return
+    setStationsLoading(true)
     try {
-      const data = await api<Station[]>('/api/sensors/stations?type=OCEMS', { token: token ?? undefined })
-      if (data.length > 0) {
-        setStations(data)
-        setSelectedId(data[0]?.id ?? '')
+      const res = await api<ApiStationsResponse>('/api/sensors/stations?type=OCEMS&limit=100', { token })
+      const raw: ApiStation[] = Array.isArray(res)
+        ? (res as unknown as ApiStation[])
+        : (res.stations ?? [])
+      if (raw.length > 0) {
+        // Build flat display stations — use first parameter of each station
+        const flat: Station[] = raw.map(s => ({
+          id: s.id,
+          name: s.name,
+          parameter: s.parameters[0] ?? 'COD',
+          unit: 'mg/L',
+          norm: null,
+          districtName: s.industry?.district?.name ?? '',
+        }))
+        setStations(flat)
+        setSelectedId(flat[0]!.id)
+        setSelectedParam(flat[0]!.parameter)
+      } else {
+        showToast({ kind: 'warn', text: 'No OCEMS stations found.' })
       }
     } catch {
-      // use demo
+      showToast({ kind: 'danger', text: 'Failed to load stations.' })
+    } finally {
+      setStationsLoading(false)
     }
-  }, [token])
+  }, [token, showToast])
 
-  const loadReadings = useCallback(async (stationId: string) => {
+  const loadReadings = useCallback(async (stationId: string, parameter: string) => {
+    if (!token || !stationId) return
     setLoading(true)
     try {
-      const data = await api<Reading[]>(`/api/sensors/stations/${stationId}/readings?days=7`, { token: token ?? undefined })
-      setReadings(data)
+      const since = new Date(Date.now() - 7 * 24 * 3600_000).toISOString()
+      const res = await api<ApiReadingsResponse>(
+        `/api/sensors/readings?stationId=${stationId}&parameter=${encodeURIComponent(parameter)}&since=${since}`,
+        { token },
+      )
+      const raw: ApiReading[] = Array.isArray(res)
+        ? (res as unknown as ApiReading[])
+        : (res.readings ?? [])
+      const sorted = [...raw].sort(
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+      )
+      setReadings(sorted.map(r => ({ timestamp: r.timestamp, value: r.value })))
     } catch {
-      setReadings(makeDemoReadings(selectedStation?.norm ?? 100))
+      showToast({ kind: 'danger', text: 'Failed to load readings.' })
+      setReadings([])
     } finally {
       setLoading(false)
     }
-  }, [token, selectedStation])
+  }, [token, showToast])
 
   useEffect(() => { void loadStations() }, [loadStations])
-  useEffect(() => { if (selectedId) void loadReadings(selectedId) }, [selectedId, loadReadings])
 
-  const chartData = buildChartData(readings, selectedStation?.norm ?? 100)
-  const norm = selectedStation?.norm ?? 100
+  useEffect(() => {
+    if (selectedId && selectedParam) void loadReadings(selectedId, selectedParam)
+  }, [selectedId, selectedParam, loadReadings])
+
+  const chartData = buildChartData(readings, selectedStation?.norm ?? null)
+  const norm = selectedStation?.norm ?? null
 
   // Check if projection crosses norm
-  const projCross = chartData.some(p => p.projected !== undefined && p.projected >= norm)
+  const projCross = norm !== null && chartData.some(p => p.projected !== undefined && p.projected >= norm)
+
+  if (stationsLoading) {
+    return (
+      <div className="h-full flex items-center justify-center text-txt-tertiary text-[14px]">
+        Loading stations…
+      </div>
+    )
+  }
 
   return (
     <div className="h-full flex flex-col bg-surface-page overflow-hidden">
@@ -176,7 +234,7 @@ export function PredictedExceedanceLabCanvas() {
       </div>
 
       {/* Station picker */}
-      <div className="px-6 py-3 bg-white border-b border-bdr-light flex-shrink-0">
+      <div className="px-6 py-3 bg-white border-b border-bdr-light flex-shrink-0 space-y-2">
         <div className="relative inline-block w-full max-w-sm">
           <button
             onClick={() => setOpen(o => !o)}
@@ -186,32 +244,38 @@ export function PredictedExceedanceLabCanvas() {
             <ChevronDown className="w-4 h-4 text-txt-secondary" />
           </button>
           {open && (
-            <div className="absolute top-full left-0 w-full z-10 mt-1 bg-white border border-bdr rounded-xl shadow-modal overflow-hidden">
+            <div className="absolute top-full left-0 w-full z-10 mt-1 bg-white border border-bdr rounded-xl shadow-modal overflow-hidden max-h-60 overflow-y-auto">
               {stations.map(s => (
                 <button
                   key={s.id}
-                  onClick={() => { setSelectedId(s.id); setOpen(false) }}
+                  onClick={() => { setSelectedId(s.id); setSelectedParam(s.parameter); setOpen(false) }}
                   className={`w-full text-left px-4 py-2.5 text-[13px] hover:bg-surface-secondary transition-colors ${s.id === selectedId ? 'font-bold text-primary bg-primary-light' : 'text-txt-primary'}`}
                 >
                   <div>{s.name}</div>
-                  <div className="text-[11px] text-txt-secondary">{s.industry} · {s.parameter} · {s.district}</div>
+                  {s.districtName && <div className="text-[11px] text-txt-secondary">{s.districtName}</div>}
                 </button>
               ))}
             </div>
           )}
         </div>
 
-        {selectedStation && (
-          <div className="mt-2 flex items-center gap-4 text-[12px] text-txt-secondary">
-            <span>{selectedStation.industry}</span>
-            <span className="text-bdr">|</span>
-            <span>{selectedStation.parameter} ({selectedStation.unit})</span>
-            <span className="text-bdr">|</span>
-            <span>Norm: <strong className="text-txt-primary">{selectedStation.norm}</strong></span>
-            {projCross && (
-              <span className="badge badge-danger ml-auto">Projected exceedance in 24h</span>
-            )}
-          </div>
+        {/* Parameter chips — common OCEMS params */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {['COD', 'BOD', 'pH', 'SS', 'NH3_N'].map(p => (
+            <button
+              key={p}
+              onClick={() => setSelectedParam(p)}
+              className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
+                selectedParam === p ? 'bg-primary text-white border-primary' : 'bg-white text-txt-secondary border-bdr hover:border-primary'
+              }`}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+
+        {projCross && (
+          <span className="badge badge-danger">Projected exceedance in 24h</span>
         )}
       </div>
 
@@ -219,6 +283,8 @@ export function PredictedExceedanceLabCanvas() {
       <div className="flex-1 overflow-hidden p-6">
         {loading ? (
           <div className="flex items-center justify-center h-full text-txt-tertiary text-[14px]">Loading data…</div>
+        ) : readings.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-txt-tertiary text-[14px]">No readings available for this station/parameter.</div>
         ) : (
           <div className="bg-white rounded-card border border-bdr-light shadow-card h-full p-4">
             <ResponsiveContainer width="100%" height="100%">
@@ -234,17 +300,19 @@ export function PredictedExceedanceLabCanvas() {
                 <Tooltip
                   contentStyle={{ borderRadius: 12, border: '1px solid #CFD8E6', fontSize: 12 }}
                   formatter={(value: number, name: string) => [
-                    `${value} ${selectedStation?.unit ?? ''}`,
+                    `${value}`,
                     name === 'actual' ? 'Actual' : 'Projected',
                   ]}
                 />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <ReferenceLine
-                  y={norm}
-                  stroke="#E53935"
-                  strokeDasharray="6 3"
-                  label={{ value: `Norm ${norm}`, position: 'insideTopRight', fill: '#E53935', fontSize: 11 }}
-                />
+                {norm !== null && (
+                  <ReferenceLine
+                    y={norm}
+                    stroke="#E53935"
+                    strokeDasharray="6 3"
+                    label={{ value: `Norm ${norm}`, position: 'insideTopRight', fill: '#E53935', fontSize: 11 }}
+                  />
+                )}
                 <Line
                   type="monotone"
                   dataKey="actual"
@@ -273,7 +341,8 @@ export function PredictedExceedanceLabCanvas() {
 
       {/* Legend note */}
       <div className="px-6 pb-4 text-[11px] text-txt-tertiary flex-shrink-0">
-        Dashed yellow line = 24h projection from linear regression of last 6 readings. Red dashed = CPCB norm.
+        Dashed yellow line = 24h projection from linear regression of last 6 readings.
+        {norm !== null && ' Red dashed = norm threshold.'}
       </div>
     </div>
   )

@@ -12,30 +12,34 @@ import { useApp } from '../../../context/AppContext.js'
 
 interface Exceedance {
   id: string
-  stationName: string
-  industry: string
-  district: string
   parameter: string
   observedValue: number
   normValue: number
-  unit: string
-  severity: 'minor' | 'major' | 'critical'
+  severity: 'MINOR' | 'MAJOR' | 'CRITICAL'
   detectedAt: string
-  dispositionState: 'PENDING' | 'confirmed_violation' | 'sensor_glitch'
+  dispositionState: 'PENDING' | 'CONFIRMED_VIOLATION' | 'SENSOR_GLITCH'
+  station: {
+    id: string
+    name: string
+    type: string
+    industry: {
+      id: string
+      name: string
+      districtId: string | null
+    } | null
+  }
 }
 
-const DEMO_EXCEEDANCES: Exceedance[] = [
-  { id: 'e1', stationName: 'Naroda-OCEMS-01', industry: 'Nirma Ltd',            district: 'Ahmedabad', parameter: 'PM10', observedValue: 130, normValue: 100, unit: 'µg/m³', severity: 'major',    detectedAt: new Date(Date.now() - 1200000).toISOString(), dispositionState: 'PENDING' },
-  { id: 'e2', stationName: 'Dahej-OCEMS-01',  industry: 'ONGC Petro additions', district: 'Bharuch',   parameter: 'VOC',  observedValue: 61,  normValue: 50,  unit: 'µg/m³', severity: 'minor',    detectedAt: new Date(Date.now() - 2400000).toISOString(), dispositionState: 'PENDING' },
-  { id: 'e3', stationName: 'Morbi-OCEMS-01',  industry: 'Kajaria Ceramics',     district: 'Morbi',     parameter: 'PM10', observedValue: 118, normValue: 100, unit: 'µg/m³', severity: 'minor',    detectedAt: new Date(Date.now() - 3600000).toISOString(), dispositionState: 'PENDING' },
-  { id: 'e4', stationName: 'Vatva-OCEMS-03',  industry: 'Aarti Industries',     district: 'Ahmedabad', parameter: 'SO2',  observedValue: 145, normValue: 80,  unit: 'µg/m³', severity: 'critical', detectedAt: new Date(Date.now() - 4800000).toISOString(), dispositionState: 'PENDING' },
-  { id: 'e5', stationName: 'Sachin-OCEMS-01', industry: 'Alok Industries',      district: 'Surat',     parameter: 'COD',  observedValue: 312, normValue: 250, unit: 'mg/L',  severity: 'major',    detectedAt: new Date(Date.now() - 7200000).toISOString(), dispositionState: 'PENDING' },
-]
+interface ExceedanceApiResponse {
+  exceedances: Exceedance[]
+  nextCursor?: string
+  count?: number
+}
 
-const SEVERITY_STYLES: Record<Exceedance['severity'], string> = {
-  minor:    'badge badge-warn',
-  major:    'badge badge-flag',
-  critical: 'badge badge-danger',
+const SEVERITY_STYLES: Record<string, string> = {
+  MINOR:    'badge badge-warn',
+  MAJOR:    'badge badge-flag',
+  CRITICAL: 'badge badge-danger',
 }
 
 function timeAgo(isoString: string): string {
@@ -57,14 +61,21 @@ export function ExceedanceFeedCanvas() {
 
   const load = useCallback(async () => {
     try {
-      const data = await api<Exceedance[]>('/api/exceedances?dispositionState=PENDING', { token: token ?? undefined })
-      setItems(data)
+      const res = await api<ExceedanceApiResponse | Exceedance[]>(
+        '/api/exceedances?dispositionState=PENDING&limit=50',
+        { token: token ?? undefined },
+      )
+      const list: Exceedance[] = Array.isArray(res)
+        ? res
+        : ((res as ExceedanceApiResponse).exceedances ?? [])
+      setItems(list)
     } catch {
-      setItems(DEMO_EXCEEDANCES)
+      showToast({ kind: 'danger', text: 'Failed to load exceedances.' })
+      setItems([])
     } finally {
       setLoading(false)
     }
-  }, [token])
+  }, [token, showToast])
 
   useEffect(() => {
     void load()
@@ -87,13 +98,7 @@ export function ExceedanceFeedCanvas() {
       setItems(prev => prev.filter(e => e.id !== id))
       setExpanded(null)
     } catch {
-      // Optimistic removal for demo
-      showToast({
-        kind: action === 'confirmed_violation' ? 'warn' : 'success',
-        text: action === 'confirmed_violation' ? 'Violation confirmed (demo).' : 'Sensor glitch marked (demo).',
-      })
-      setItems(prev => prev.filter(e => e.id !== id))
-      setExpanded(null)
+      showToast({ kind: 'danger', text: 'Failed to update disposition.' })
     } finally {
       setActing(null)
     }
@@ -133,6 +138,8 @@ export function ExceedanceFeedCanvas() {
           items.map(exc => {
             const isExpanded = expanded === exc.id
             const breach = Math.round(((exc.observedValue - exc.normValue) / exc.normValue) * 100)
+            const industryName = exc.station.industry?.name ?? exc.station.name
+            const stationName = exc.station.name
             return (
               <div
                 key={exc.id}
@@ -144,19 +151,19 @@ export function ExceedanceFeedCanvas() {
                   onClick={() => setExpanded(isExpanded ? null : exc.id)}
                 >
                   <AlertTriangle className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
-                    exc.severity === 'critical' ? 'text-danger' : exc.severity === 'major' ? 'text-flag' : 'text-warn'
+                    exc.severity === 'CRITICAL' ? 'text-danger' : exc.severity === 'MAJOR' ? 'text-flag' : 'text-warn'
                   }`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[13px] font-bold text-txt-primary">{exc.industry}</span>
+                      <span className="text-[13px] font-bold text-txt-primary">{industryName}</span>
                       <span className={SEVERITY_STYLES[exc.severity]}>{exc.severity}</span>
                     </div>
                     <div className="text-[12px] text-txt-secondary mt-0.5">
-                      {exc.stationName} · {exc.district} · {exc.parameter}
+                      {stationName} · {exc.parameter}
                     </div>
                     <div className="flex items-center gap-4 mt-1 text-[12px]">
                       <span className="font-semibold text-danger">
-                        {exc.observedValue} {exc.unit} <span className="text-txt-tertiary font-normal">(norm {exc.normValue})</span>
+                        {exc.observedValue} <span className="text-txt-tertiary font-normal">(norm {exc.normValue})</span>
                       </span>
                       <span className="text-danger font-medium">+{breach}% over limit</span>
                       <span className="text-txt-tertiary">{timeAgo(exc.detectedAt)}</span>
@@ -169,7 +176,7 @@ export function ExceedanceFeedCanvas() {
                 {isExpanded && (
                   <div className="px-4 pb-4 pt-0 border-t border-bdr-light bg-surface-secondary/40 animate-slide-in">
                     <div className="text-[12px] text-txt-secondary py-3">
-                      Detected at {new Date(exc.detectedAt).toLocaleString()} · Station {exc.stationName}
+                      Detected at {new Date(exc.detectedAt).toLocaleString()} · Station {stationName}
                     </div>
                     <div className="flex gap-3">
                       <button
