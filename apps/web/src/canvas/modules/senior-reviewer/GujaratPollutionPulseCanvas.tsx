@@ -106,11 +106,32 @@ function KpiTile({ icon, label, value, sub, accent = 'text-primary' }: KpiTilePr
   )
 }
 
+// ── District ID → Name lookup (built from industries endpoint) ────────────────
+
+async function fetchDistrictMap(token: string): Promise<Map<string, string>> {
+  try {
+    const res = await api<{ items: Array<{ districtId: string; district: { name: string } | null }> }>(
+      '/api/industries?limit=100',
+      { token },
+    )
+    const map = new Map<string, string>()
+    for (const ind of res.items) {
+      if (ind.districtId && ind.district?.name) {
+        map.set(ind.districtId, ind.district.name)
+      }
+    }
+    return map
+  } catch {
+    return new Map()
+  }
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function GujaratPollutionPulseCanvas() {
   const { token } = useAuth()
   const [data, setData] = useState<PulseData | null>(null)
+  const [districtMap, setDistrictMap] = useState<Map<string, string>>(new Map())
   const [loading, setLoading] = useState(true)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -120,8 +141,12 @@ export function GujaratPollutionPulseCanvas() {
     if (!token) return
     try {
       setRefreshing(true)
-      const d = await api<PulseData>('/api/stats/pulse', { token })
+      const [d, dm] = await Promise.all([
+        api<PulseData>('/api/stats/pulse', { token }),
+        districtMap.size === 0 ? fetchDistrictMap(token) : Promise.resolve(districtMap),
+      ])
       setData(d)
+      if (dm.size > 0) setDistrictMap(dm)
       setLastRefresh(new Date())
     } catch {
       // silent — stale data displayed
@@ -138,7 +163,7 @@ export function GujaratPollutionPulseCanvas() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token])
 
-  // ── Build heatmap matrix ──────────────────────────────────────────────────
+  // ── Build heatmap matrix (resolve district IDs → names) ──────────────────
 
   const heatMatrix = (() => {
     if (!data) return { districts: [] as string[], matrix: new Map<string, Map<string, number>>(), max: 0 }
@@ -147,7 +172,9 @@ export function GujaratPollutionPulseCanvas() {
     let max = 0
 
     for (const r of data.districtStream) {
-      const d = r.district ?? 'Unknown'
+      // r.district may be an ID — resolve to name
+      const rawId = r.district ?? ''
+      const d = (rawId && districtMap.get(rawId)) ?? (rawId.length < 30 ? rawId : 'Unknown')
       districtSet.add(d)
       if (!matrix.has(d)) matrix.set(d, new Map())
       const streamMap = matrix.get(d)!
