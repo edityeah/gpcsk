@@ -408,6 +408,243 @@ const BEFORE_END = new Date('2023-09-18T23:59:59Z')
 const AFTER_START = new Date('2023-09-29T00:00:00Z')
 const AFTER_END = new Date('2023-10-05T23:59:59Z')
 
+// ── GET /api/stats/war-room ───────────────────────────────────────────────────
+//
+// Single aggregated payload for the Senior Reviewer War Room canvas:
+//   kpis:            { criticalExceedances24h, inspectionTriggerAlerts, pendingReviewEnforcement, hotspotComplaintsThisWeek }
+//   breakingFeed:    last 20 events (critical exceedances + new closures + new show-causes + hotspot spikes)
+//   slaSummary:      enforcement in PENDING_REVIEW >48h, inspections due within 24h, RED-category renewals due 30d
+//   offlineStations: stations with status != 'active'
+//   hotspotPoints:   complaint clusters for map overlay (from complaints/hotspots pattern)
+
+statsRouter.get('/war-room', requireAuth, async (_req, res) => {
+  const now   = new Date()
+  const h24   = daysAgo(1)
+  const d7    = daysAgo(7)
+  const d48h  = new Date(now.getTime() - 48 * 3_600_000)
+  const in24h = new Date(now.getTime() + 24 * 3_600_000)
+  const in30d = new Date(now.getTime() + 30 * 24 * 3_600_000)
+
+  const [
+    criticalExceedances24h,
+    inspectionTriggerAlerts,
+    pendingReviewEnforcement,
+    hotspotComplaintsThisWeek,
+  ] = await Promise.all([
+    // KPI 1 — critical exceedances last 24h
+    prisma.exceedance.count({
+      where: { severity: 'CRITICAL', detectedAt: { gte: h24 } },
+    }),
+
+    // KPI 2 — inspection-trigger alerts (INSPECTION_DUE notifications created in last 7d)
+    prisma.notification.count({
+      where: { category: 'INSPECTION_DUE', createdAt: { gte: d7 } },
+    }),
+
+    // KPI 3 — enforcement actions in PENDING_REVIEW
+    prisma.enforcementAction.count({ where: { state: 'PENDING_REVIEW' } }),
+
+    // KPI 4 — complaints received this week
+    prisma.complaint.count({ where: { receivedAt: { gte: d7 } } }),
+  ])
+
+  // ── Breaking feed — last 20 events ────────────────────────────────────────
+  const [recentExceedances, recentCommitted, recentShowCause] = await Promise.all([
+    // Critical pending exceedances (last 24h)
+    prisma.exceedance.findMany({
+      where: { severity: 'CRITICAL', dispositionState: 'PENDING', detectedAt: { gte: h24 } },
+      include: {
+        station: {
+          select: {
+            id: true, name: true, type: true,
+            industry: { select: { id: true, name: true } },
+          },
+        },
+      },
+      orderBy: { detectedAt: 'desc' },
+      take: 12,
+    }),
+    // New COMMITTED enforcement in last 7 days
+    prisma.enforcementAction.findMany({
+      where: { state: 'COMMITTED', reviewedAt: { gte: d7 } },
+      include: { industry: { select: { id: true, name: true } } },
+      orderBy: { reviewedAt: 'desc' },
+      take: 5,
+    }),
+    // PENDING_REVIEW show-cause/closure (newest)
+    prisma.enforcementAction.findMany({
+      where: { state: 'PENDING_REVIEW', type: { in: ['SHOW_CAUSE', 'CLOSURE_DIRECTION'] } },
+      include: { industry: { select: { id: true, name: true } } },
+      orderBy: { draftedAt: 'desc' },
+      take: 5,
+    }),
+  ])
+
+  // Combine + sort by timestamp, take top 20
+  type BreakingEvent = {
+    id: string
+    kind: 'EXCEEDANCE' | 'COMMITTED' | 'PENDING_REVIEW'
+    timestamp: Date
+    industryId: string | null
+    industryName: string | null
+    summary: string
+    actionCanvas: string
+  }
+
+  const feed: BreakingEvent[] = [
+    ...recentExceedances.map(e => ({
+      id: e.id,
+      kind: 'EXCEEDANCE' as const,
+      timestamp: e.detectedAt,
+      industryId: e.station.industry?.id ?? null,
+      industryName: e.station.industry?.name ?? null,
+      summary: `CRITICAL ${e.parameter}: ${e.observedValue.toFixed(1)} vs norm ${e.normValue.toFixed(1)} at ${e.station.name} (${e.breachMagnitude.toFixed(0)}% above limit)`,
+      actionCanvas: 'OPEN_INDUSTRY_DEEP_DIVE',
+    })),
+    ...recentCommitted.map(e => ({
+      id: e.id,
+      kind: 'COMMITTED' as const,
+      timestamp: e.reviewedAt!,
+      industryId: e.industryId,
+      industryName: e.industry.name,
+      summary: `${humanType(e.type)} committed for ${e.industry.name}`,
+      actionCanvas: 'OPEN_ENFORCEMENT_PIPELINE',
+    })),
+    ...recentShowCause.map(e => ({
+      id: e.id,
+      kind: 'PENDING_REVIEW' as const,
+      timestamp: e.draftedAt,
+      industryId: e.industryId,
+      industryName: e.industry.name,
+      summary: `${humanType(e.type)} pending review — ${e.industry.name}`,
+      actionCanvas: 'OPEN_MAKER_CHECKER_QUEUE',
+    })),
+  ]
+    .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+    .slice(0, 20)
+
+  // ── SLA Summary ──────────────────────────────────────────────────────────
+  const [slaEnforcement, slaInspections, slaRenewals] = await Promise.all([
+    // PENDING_REVIEW > 48h without review
+    prisma.enforcementAction.findMany({
+      where: { state: 'PENDING_REVIEW', draftedAt: { lte: d48h }, reviewedAt: null },
+      include: { industry: { select: { id: true, name: true } } },
+      orderBy: { draftedAt: 'asc' },
+      take: 10,
+    }),
+    // INSPECTION_DUE within 24h
+    prisma.inspection.findMany({
+      where: { state: 'SCHEDULED', scheduledAt: { lte: in24h, gte: now } },
+      include: { industry: { select: { id: true, name: true } } },
+      orderBy: { scheduledAt: 'asc' },
+      take: 10,
+    }),
+    // RED-category industries with consent expiring within 30 days
+    prisma.consentApplication.findMany({
+      where: {
+        state: { in: ['APPROVED', 'RENEWED'] },
+        validityTo: { lte: in30d, gte: now },
+        industry: { category: 'RED' },
+      },
+      include: { industry: { select: { id: true, name: true, category: true } } },
+      orderBy: { validityTo: 'asc' },
+      take: 10,
+    }),
+  ])
+
+  // ── Offline stations for map overlay ────────────────────────────────────
+  const offlineStations = await prisma.monitoringStation.findMany({
+    where: { status: { not: 'active' } },
+    select: {
+      id: true, name: true, type: true, status: true, lat: true, lng: true,
+      industry: { select: { id: true, name: true } },
+    },
+    take: 20,
+  })
+
+  // ── Complaint hotspot points (recent week) ────────────────────────────────
+  const hotspotRaw = await prisma.$queryRaw<
+    Array<{ lat: number; lng: number; count: bigint; sev: string; districtId: string | null }>
+  >`
+    SELECT
+      ROUND(lat::numeric, 1)::float              AS lat,
+      ROUND(lng::numeric, 1)::float              AS lng,
+      COUNT(*)::bigint                            AS count,
+      MAX(severity::text)                         AS sev,
+      MAX("districtId"::text)                     AS "districtId"
+    FROM   "Complaint"
+    WHERE  lat IS NOT NULL
+      AND  lng IS NOT NULL
+      AND  "receivedAt" >= ${d7}
+    GROUP  BY ROUND(lat::numeric, 1), ROUND(lng::numeric, 1)
+    HAVING COUNT(*) >= 1
+    ORDER  BY count DESC
+    LIMIT  30
+  `
+
+  res.json({
+    kpis: {
+      criticalExceedances24h,
+      inspectionTriggerAlerts,
+      pendingReviewEnforcement,
+      hotspotComplaintsThisWeek,
+    },
+    breakingFeed: feed.map(e => ({
+      id: e.id,
+      kind: e.kind,
+      timestamp: e.timestamp,
+      industryId: e.industryId,
+      industryName: e.industryName,
+      summary: e.summary,
+      actionCanvas: e.actionCanvas,
+    })),
+    slaSummary: {
+      pendingReviewOver48h: slaEnforcement.map(e => ({
+        id: e.id,
+        type: e.type,
+        industryId: e.industryId,
+        industryName: e.industry.name,
+        draftedAt: e.draftedAt,
+        hoursWaiting: Math.round((now.getTime() - e.draftedAt.getTime()) / 3_600_000),
+      })),
+      inspectionsDueIn24h: slaInspections.map(i => ({
+        id: i.id,
+        industryId: i.industryId,
+        industryName: i.industry.name,
+        scheduledAt: i.scheduledAt,
+      })),
+      redCategoryRenewalsDue30d: slaRenewals.map(c => ({
+        id: c.id,
+        industryId: c.industryId,
+        industryName: c.industry.name,
+        category: c.industry.category,
+        validityTo: c.validityTo,
+        daysRemaining: c.validityTo
+          ? Math.ceil((c.validityTo.getTime() - now.getTime()) / 86_400_000)
+          : null,
+      })),
+    },
+    offlineStations: offlineStations.map(s => ({
+      id: s.id, name: s.name, type: s.type, status: s.status,
+      lat: s.lat, lng: s.lng,
+      industryId: s.industry?.id ?? null,
+      industryName: s.industry?.name ?? null,
+    })),
+    hotspotPoints: hotspotRaw.map(h => ({
+      lat: h.lat,
+      lng: h.lng,
+      count: Number(h.count),
+      severity: h.sev,
+      districtId: h.districtId,
+    })),
+    generatedAt: now,
+  })
+})
+
+function humanType(type: string): string {
+  return type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
 statsRouter.get('/festival-monitoring', requireAuth, async (_req, res) => {
   // Find Sabarmati-related stations (MINARS / GEMS / AAQM near Ahmedabad)
   const sabarmatiStations = await prisma.monitoringStation.findMany({

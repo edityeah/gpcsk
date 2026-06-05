@@ -166,6 +166,9 @@ function Shell() {
         {/* Content area */}
         <ContentArea />
 
+        {/* War Room floating pill — visible only for SENIOR_REVIEWER */}
+        <WarRoomPill />
+
         {/* Canvas overlay — absolute, scoped to main */}
         <CanvasOverlay />
       </main>
@@ -723,6 +726,26 @@ function MessageInput({ onSend }: MessageInputProps) {
         </div>
       </form>
     </div>
+  )
+}
+
+// ── War Room floating pill (Senior Reviewer only) ─────────────────────────
+
+function WarRoomPill() {
+  const { user } = useAuth()
+  const { openCanvas } = useChat()
+
+  if (user?.role !== 'SENIOR_REVIEWER') return null
+
+  return (
+    <button
+      type="button"
+      onClick={() => openCanvas('OPEN_WAR_ROOM')}
+      className="fixed bottom-24 right-6 z-10 inline-flex items-center gap-2 px-4 py-2.5 rounded-pill bg-rose-600 text-white font-bold text-[13px] shadow-modal hover:bg-rose-700 active:scale-95 transition-all"
+    >
+      <Lucide.ShieldAlert className="w-4 h-4" />
+      War Room
+    </button>
   )
 }
 

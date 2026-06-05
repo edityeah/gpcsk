@@ -45,6 +45,21 @@ export interface ModuleEntry {
 // Senior Reviewer mega-dashboards
 // ────────────────────────────────────────────────────────────────────────────
 
+const OPEN_WAR_ROOM: ModuleEntry = {
+  id: 'OPEN_WAR_ROOM',
+  component: lazy(() =>
+    import('../canvas/modules/senior-reviewer/WarRoomCanvas.js').then((m) => ({
+      default: m.WarRoomCanvas,
+    })),
+  ),
+  allowedRoles: ['SENIOR_REVIEWER'],
+  label: { en: 'War Room', gu: 'વોર રૂમ', hi: 'वॉर रूम' },
+  icon: 'ShieldAlert',
+  tone: 'rose',
+  description: 'Live crisis board — breaking critical exceedances, hotspots, pending enforcement',
+  sidebarGroup: 'Dashboards',
+}
+
 const OPEN_GUJARAT_PULSE: ModuleEntry = {
   id: 'OPEN_GUJARAT_PULSE',
   component: lazy(() =>
@@ -535,6 +550,7 @@ const OPEN_REPORT_EXPORT: ModuleEntry = {
 
 export const moduleRegistry: ModuleEntry[] = [
   // Senior Reviewer
+  OPEN_WAR_ROOM,
   OPEN_GUJARAT_PULSE,
   OPEN_INDUSTRY_RISK_INDEX,
   OPEN_ENFORCEMENT_PIPELINE,
