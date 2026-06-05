@@ -373,7 +373,7 @@ export const actionRegistry: ActionDefinition[] = [
   },
 ]
 
-/** Build the OpenAI tools array from the registry */
+/** Build the OpenAI tools array from the registry (canvas actions only) */
 export function buildOpenAiTools(userRole: Role) {
   return actionRegistry
     .filter((action) => action.allowedRoles.includes(userRole))
@@ -391,3 +391,161 @@ export function buildOpenAiTools(userRole: Role) {
 export function findAction(name: string): ActionDefinition | undefined {
   return actionRegistry.find((a) => a.name === name)
 }
+
+// ── Chart + Data-query tool definitions ──────────────────────────────────────
+// These tools are added to ALL roles (they are read-only data queries).
+
+/** Spec returned by the AI when it calls renderChart */
+export interface ChartSpec {
+  chartType: 'BAR' | 'LINE' | 'PIE' | 'AREA'
+  title: string
+  xLabel?: string
+  yLabel?: string
+  series: Array<{
+    name: string
+    data: Array<{ x: string | number; y: number }>
+  }>
+  description?: string
+  canvasHint?: string
+}
+
+/** Tool parameter schema for renderChart */
+const renderChartSchema = {
+  type: 'object' as const,
+  properties: {
+    chartType: {
+      type: 'string',
+      description: 'Chart type to render',
+      enum: ['BAR', 'LINE', 'PIE', 'AREA'],
+    },
+    title: { type: 'string', description: 'Chart title' },
+    xLabel: { type: 'string', description: 'X-axis label' },
+    yLabel: { type: 'string', description: 'Y-axis label' },
+    series: {
+      type: 'array',
+      description: 'Data series — each has a name and array of {x, y} points',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          data: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                x: { type: 'string', description: 'Category or date label' },
+                y: { type: 'number', description: 'Numeric value' },
+              },
+              required: ['x', 'y'],
+            },
+          },
+        },
+        required: ['name', 'data'],
+      },
+    },
+    description: { type: 'string', description: 'Short description shown below the chart' },
+    canvasHint: { type: 'string', description: 'Canvas module to open when "Open as canvas" is clicked' },
+  },
+  required: ['chartType', 'title', 'series'],
+}
+
+export const dataTools = [
+  {
+    type: 'function' as const,
+    function: {
+      name: 'renderChart',
+      description:
+        'Render an inline chart in the chat panel. Call this whenever the user asks for trends, top-N rankings, breakdowns, or comparisons. NEVER fabricate data — always call a data query tool first to get real numbers, then call renderChart.',
+      parameters: renderChartSchema,
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'queryTopPollutingIndustries',
+      description:
+        'Query the top polluting industries by exceedance count and risk score. Returns real data from the DB. Use this before calling renderChart for industry comparisons.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          district: { type: 'string', description: 'Filter by district name (optional)' },
+          limit: { type: 'number', description: 'Max results (default 10, max 20)' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'queryExceedanceTrend',
+      description:
+        'Query daily exceedance counts over time, optionally filtered by parameter, station, or industry. Returns {date, exceedanceCount} array. Use before renderChart for trend charts.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          parameter: { type: 'string', description: 'Pollution parameter e.g. BOD, COD, PM10' },
+          days: { type: 'number', description: 'Number of days back from today (default 30)' },
+          stationId: { type: 'string', description: 'Filter to specific monitoring station ID' },
+          industryId: { type: 'string', description: 'Filter to specific industry ID' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'querySensorReadingTrend',
+      description:
+        'Query daily average sensor readings for a parameter at a station. Returns {date, avgValue} array. Use before renderChart for time-series charts.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          stationId: { type: 'string', description: 'Monitoring station ID (required)' },
+          parameter: { type: 'string', description: 'Parameter e.g. BOD, COD, pH, PM10' },
+          days: { type: 'number', description: 'Number of days back (default 30)' },
+        },
+        required: ['stationId', 'parameter'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'queryComplaintsByCategory',
+      description:
+        'Query complaint counts grouped by category for the past N days. Returns {category, count} array. Use before renderChart for pie/bar charts of complaint distribution.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          days: { type: 'number', description: 'Look-back window in days (default 30)' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'queryEnforcementByState',
+      description:
+        'Query count of enforcement actions grouped by workflow state. Returns {state, count} array.',
+      parameters: {
+        type: 'object' as const,
+        properties: {},
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'queryCetpScorecard',
+      description:
+        'Query list of CETPs with latest COD/BOD readings vs standards. Returns array of {cetpName, district, parameter, latestValue, norm, unit}.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          district: { type: 'string', description: 'Filter by district (optional)' },
+        },
+      },
+    },
+  },
+]

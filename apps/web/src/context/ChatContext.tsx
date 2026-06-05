@@ -32,6 +32,26 @@ export interface Citation {
   snippet: string
 }
 
+export interface ChartDataPoint {
+  x: string | number
+  y: number
+}
+
+export interface ChartSeries {
+  name: string
+  data: ChartDataPoint[]
+}
+
+export interface ChartSpec {
+  chartType: 'BAR' | 'LINE' | 'PIE' | 'AREA'
+  title: string
+  xLabel?: string
+  yLabel?: string
+  series: ChartSeries[]
+  description?: string
+  canvasHint?: string
+}
+
 export type ChatMessage =
   | {
       id: string
@@ -42,10 +62,19 @@ export type ChatMessage =
   | {
       id: string
       role: 'assistant'
+      kind: 'answer'
       content: string
       citations?: Citation[]
       module?: string
       args?: Record<string, unknown>
+      createdAt: string
+    }
+  | {
+      id: string
+      role: 'assistant'
+      kind: 'chart'
+      content: string
+      spec: ChartSpec
       createdAt: string
     }
 
@@ -61,11 +90,12 @@ export interface CanvasState {
 }
 
 interface AiMessageResponse {
-  kind: 'canvas' | 'answer'
+  kind: 'canvas' | 'answer' | 'chart'
   module?: string
   args?: Record<string, unknown>
   text?: string
   citations?: Citation[]
+  spec?: ChartSpec
   threadId?: string
 }
 
@@ -206,9 +236,23 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           const assistant: ChatMessage = {
             id: makeLocalId('m'),
             role: 'assistant',
+            kind: 'answer',
             content: `Opening ${res.module.replace(/^OPEN_/, '').replace(/_/g, ' ').toLowerCase()}…`,
             module: res.module,
             args: res.args,
+            createdAt: new Date().toISOString(),
+          }
+          setMessagesByThread((prev) => ({
+            ...prev,
+            [finalId]: [...(prev[finalId] ?? []), assistant],
+          }))
+        } else if (res.kind === 'chart' && res.spec) {
+          const assistant: ChatMessage = {
+            id: makeLocalId('m'),
+            role: 'assistant',
+            kind: 'chart',
+            content: res.spec.title,
+            spec: res.spec,
             createdAt: new Date().toISOString(),
           }
           setMessagesByThread((prev) => ({
@@ -219,6 +263,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           const assistant: ChatMessage = {
             id: makeLocalId('m'),
             role: 'assistant',
+            kind: 'answer',
             content: res.text ?? '',
             citations: res.citations ?? [],
             createdAt: new Date().toISOString(),
@@ -247,6 +292,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         const assistant: ChatMessage = {
           id: makeLocalId('m'),
           role: 'assistant',
+          kind: 'answer',
           content: 'Sorry — I could not reach the server. Please try again.',
           createdAt: new Date().toISOString(),
         }

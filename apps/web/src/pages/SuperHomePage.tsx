@@ -646,7 +646,7 @@ function FeatureCard({ module: m, onClick }: FeatureCardProps) {
 // ── Chat thread ────────────────────────────────────────────────────────────
 
 function ChatThread() {
-  const { messages, busy } = useChat()
+  const { messages, busy, openCanvas } = useChat()
   const listRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -663,7 +663,9 @@ function ChatThread() {
             key={m.id}
             role={m.role}
             content={m.content}
-            citations={m.role === 'assistant' ? m.citations : undefined}
+            citations={m.role === 'assistant' && m.kind === 'answer' ? m.citations : undefined}
+            chartSpec={m.role === 'assistant' && m.kind === 'chart' ? m.spec : undefined}
+            onOpenCanvas={(module) => openCanvas(module)}
           />
         ))}
         {busy && (
