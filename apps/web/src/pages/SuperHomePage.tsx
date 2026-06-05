@@ -412,12 +412,12 @@ function ProfilePill() {
 // ── Saathi quick button ────────────────────────────────────────────────────
 
 function SaathiQuickButton() {
-  const { openCanvas } = useChat()
+  const { newThread, closeCanvas } = useChat()
   return (
     <button
       type="button"
-      onClick={() => openCanvas('OPEN_SAATHI_ASSISTANT')}
-      title="Talk to Saathi"
+      onClick={() => { closeCanvas?.(); newThread?.() }}
+      title="New conversation with Saathi"
       className="inline-flex items-center gap-1.5 md:gap-2 pl-2.5 pr-3 md:pl-3 md:pr-4 py-1.5 md:py-2 rounded-pill bg-gradient-to-r from-primary to-primary-dark text-white font-bold text-[11px] md:text-[12px] shadow-card hover:opacity-90 active:scale-95 transition"
     >
       <Sparkles className="w-3.5 h-3.5 md:w-4 md:h-4" />
