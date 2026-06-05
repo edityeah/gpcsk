@@ -1,6 +1,6 @@
 // IndustryCorrelationCanvas — Complaints Officer
-// For a selected complaint, shows nearby industries with exceedance counts.
-// "Link to industry" → PATCH /api/complaints/:id
+// For a selected complaint, shows nearby industries from /api/industries (top risk).
+// Link complaint to industry via PATCH /api/complaints/:id
 
 import { useEffect, useState, useCallback } from 'react'
 import {
@@ -15,90 +15,70 @@ import { api } from '../../../lib/api.js'
 import { useAuth } from '../../../context/AuthContext.js'
 import { useApp } from '../../../context/AppContext.js'
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Real API types ───────────────────────────────────────────────────────────
 
-interface ComplaintSummary {
+interface ApiComplaint {
   id: string
   description: string
-  location?: { district?: string; taluka?: string }
-  category?: string
-  severity?: string
-  state: string
-  industry?: { id: string; name: string } | null
+  category: string        // e.g. 'AIR_POLLUTION'
+  severity: string        // 'MINOR' | 'MAJOR' | 'CRITICAL'
+  state: string           // 'NEW' | 'ASSIGNED' | etc.
+  lat: number | null
+  lng: number | null
+  industryId: string | null
 }
 
-interface NearbyIndustry {
+interface ApiIndustry {
   id: string
   name: string
-  sector: string
-  category: string          // Red / Orange / Green / White
-  district: string
-  distanceKm?: number
-  exceedanceCount: number
-  recentExceedances: Array<{ parameter: string; severity: string; detectedAt: string }>
+  ucNumber: string
+  category: string        // 'RED' | 'ORANGE' | etc.
+  lat: number | null
+  lng: number | null
+  sector: { code: string; name: string } | null
+  district: { code: string; name: string } | null
 }
 
-interface CorrelationResponse {
-  complaint: ComplaintSummary
-  nearbyIndustries: NearbyIndustry[]
+interface ApiIndustriesResponse {
+  items: ApiIndustry[]
 }
-
-// ─── Demo data ────────────────────────────────────────────────────────────────
-
-const DEMO_COMPLAINTS: ComplaintSummary[] = [
-  { id: 'C-001', description: 'Black smoke from GIDC Vatva stack', category: 'Air Pollution', severity: 'high', state: 'new', location: { district: 'Ahmedabad', taluka: 'Vatva' } },
-  { id: 'C-002', description: 'Dye effluent in drain at Sachin GIDC', category: 'Water Pollution', severity: 'critical', state: 'assigned', location: { district: 'Surat', taluka: 'Sachin' }, industry: { id: 'IND-054', name: 'Sachin Dye & Chem Pvt Ltd' } },
-  { id: 'C-003', description: 'Waste drums at Ankleshwar GIDC', category: 'Hazardous Waste', severity: 'medium', state: 'in_progress', location: { district: 'Bharuch', taluka: 'Ankleshwar' } },
-]
-
-const DEMO_NEARBY: NearbyIndustry[] = [
-  {
-    id: 'IND-021', name: 'Vatva Chemical Works Pvt Ltd', sector: 'Chemical', category: 'Red',
-    district: 'Ahmedabad', distanceKm: 0.4, exceedanceCount: 18,
-    recentExceedances: [
-      { parameter: 'PM10', severity: 'critical', detectedAt: new Date(Date.now() - 3600_000).toISOString() },
-      { parameter: 'SO2', severity: 'high', detectedAt: new Date(Date.now() - 86400_000).toISOString() },
-    ],
-  },
-  {
-    id: 'IND-022', name: 'Gujarat Dye Intermediate Ltd', sector: 'Dyes & Pigments', category: 'Red',
-    district: 'Ahmedabad', distanceKm: 0.9, exceedanceCount: 11,
-    recentExceedances: [
-      { parameter: 'NOx', severity: 'high', detectedAt: new Date(Date.now() - 7200_000).toISOString() },
-    ],
-  },
-  {
-    id: 'IND-023', name: 'Naroda Enviro Projects Ltd', sector: 'CETP', category: 'Orange',
-    district: 'Ahmedabad', distanceKm: 1.5, exceedanceCount: 7,
-    recentExceedances: [
-      { parameter: 'COD', severity: 'medium', detectedAt: new Date(Date.now() - 172800_000).toISOString() },
-    ],
-  },
-  {
-    id: 'IND-024', name: 'Vatva Dyestuff Mfg Co', sector: 'Chemical', category: 'Red',
-    district: 'Ahmedabad', distanceKm: 2.1, exceedanceCount: 3,
-    recentExceedances: [],
-  },
-]
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const CATEGORY_BADGE: Record<string, string> = {
-  Red: 'bg-danger-light text-danger font-bold',
-  Orange: 'bg-orange-100 text-orange-700 font-semibold',
-  Green: 'bg-ok-light text-ok font-semibold',
-  White: 'bg-surface-secondary text-txt-secondary',
+  RED:    'bg-danger-light text-danger font-bold',
+  ORANGE: 'bg-orange-100 text-orange-700 font-semibold',
+  GREEN:  'bg-ok-light text-ok font-semibold',
+  WHITE:  'bg-surface-secondary text-txt-secondary',
 }
 
 const SEV_BADGE: Record<string, string> = {
-  critical: 'bg-danger text-white',
-  high: 'bg-orange-500 text-white',
-  medium: 'bg-warn text-txt-primary',
-  low: 'bg-ok-light text-ok',
+  CRITICAL: 'bg-danger text-white',
+  MAJOR:    'bg-orange-500 text-white',
+  MINOR:    'bg-warn text-txt-primary',
 }
 
-function fmt(iso: string) {
-  return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+const CAT_LABEL: Record<string, string> = {
+  AIR_POLLUTION:    'Air Pollution',
+  WATER_POLLUTION:  'Water Pollution',
+  NOISE:            'Noise',
+  HAZARDOUS_WASTE:  'Hazardous Waste',
+  ODOUR:            'Odour',
+  BURNING:          'Burning',
+  ILLEGAL_DISCHARGE:'Illegal Discharge',
+}
+
+// Haversine distance in km
+function distKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLng = ((lng2 - lng1) * Math.PI) / 180
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
 // ─── Main canvas ─────────────────────────────────────────────────────────────
@@ -107,76 +87,103 @@ export function IndustryCorrelationCanvas() {
   const { token } = useAuth()
   const { showToast } = useApp()
 
-  const [complaints, setComplaints] = useState<ComplaintSummary[]>([])
+  const [complaints, setComplaints] = useState<ApiComplaint[]>([])
   const [selectedId, setSelectedId] = useState<string>('')
-  const [correlation, setCorrelation] = useState<CorrelationResponse | null>(null)
+  const [industries, setIndustries] = useState<ApiIndustry[]>([])
+  const [linkedId, setLinkedId] = useState<string | null>(null)
   const [loadingList, setLoadingList] = useState(true)
-  const [loadingCorr, setLoadingCorr] = useState(false)
+  const [loadingInd, setLoadingInd] = useState(false)
   const [linking, setLinking] = useState<string | null>(null)
 
   // Load complaint list
   useEffect(() => {
+    if (!token) return
     setLoadingList(true)
-    api<{ data: ComplaintSummary[] }>('/api/complaints?limit=20', { token: token ?? undefined })
+    api<ApiComplaint[] | { complaints?: ApiComplaint[]; data?: ApiComplaint[] }>(
+      '/api/complaints?limit=20',
+      { token },
+    )
       .then(res => {
-        setComplaints(res.data ?? [])
-        if (res.data?.length) setSelectedId(res.data[0]!.id)
+        const list: ApiComplaint[] = Array.isArray(res)
+          ? (res as ApiComplaint[])
+          : ((res as { complaints?: ApiComplaint[]; data?: ApiComplaint[] }).complaints
+            ?? (res as { data?: ApiComplaint[] }).data
+            ?? [])
+        setComplaints(list)
+        if (list.length > 0) {
+          setSelectedId(list[0]!.id)
+          setLinkedId(list[0]!.industryId)
+        }
       })
       .catch(() => {
-        setComplaints(DEMO_COMPLAINTS)
-        setSelectedId(DEMO_COMPLAINTS[0]!.id)
+        showToast({ kind: 'danger', text: 'Failed to load complaints.' })
       })
       .finally(() => setLoadingList(false))
-  }, [token])
+  }, [token, showToast])
 
-  // Load correlation when complaint selected
-  const loadCorrelation = useCallback(async (id: string) => {
-    if (!id) return
-    setLoadingCorr(true)
+  // Load industries sorted by risk (top 20 RED/ORANGE)
+  const loadIndustries = useCallback(async (complaint: ApiComplaint) => {
+    if (!token) return
+    setLoadingInd(true)
     try {
-      const res = await api<CorrelationResponse>(`/api/complaints/${id}/correlation`, {
-        token: token ?? undefined,
-      })
-      setCorrelation(res)
+      const res = await api<ApiIndustriesResponse>(
+        '/api/industries?category=RED&limit=20',
+        { token },
+      )
+      let list: ApiIndustry[] = Array.isArray(res)
+        ? (res as unknown as ApiIndustry[])
+        : (res.items ?? [])
+
+      // Sort by distance to complaint if we have lat/lng
+      if (complaint.lat !== null && complaint.lng !== null) {
+        list = list
+          .filter(ind => ind.lat !== null && ind.lng !== null)
+          .sort((a, b) =>
+            distKm(complaint.lat!, complaint.lng!, a.lat!, a.lng!) -
+            distKm(complaint.lat!, complaint.lng!, b.lat!, b.lng!),
+          )
+          .slice(0, 10)
+      } else {
+        list = list.slice(0, 10)
+      }
+      setIndustries(list)
     } catch {
-      // Demo fallback
-      const c = DEMO_COMPLAINTS.find(x => x.id === id) ?? DEMO_COMPLAINTS[0]!
-      setCorrelation({ complaint: c, nearbyIndustries: DEMO_NEARBY })
+      showToast({ kind: 'danger', text: 'Failed to load nearby industries.' })
+      setIndustries([])
     } finally {
-      setLoadingCorr(false)
+      setLoadingInd(false)
     }
-  }, [token])
+  }, [token, showToast])
 
   useEffect(() => {
-    if (selectedId) void loadCorrelation(selectedId)
-  }, [selectedId, loadCorrelation])
+    const c = complaints.find(x => x.id === selectedId)
+    if (c) {
+      setLinkedId(c.industryId)
+      void loadIndustries(c)
+    }
+  }, [selectedId, complaints, loadIndustries])
 
   async function handleLink(industryId: string) {
-    if (!correlation) return
+    if (!selectedId) return
     setLinking(industryId)
     try {
-      await api(`/api/complaints/${correlation.complaint.id}`, {
+      await api(`/api/complaints/${selectedId}`, {
         method: 'PATCH',
         token: token ?? undefined,
         body: { industryId },
       })
       showToast({ kind: 'success', text: 'Industry linked to complaint.' })
-      void loadCorrelation(correlation.complaint.id)
+      setLinkedId(industryId)
+      // Update local complaint list
+      setComplaints(prev => prev.map(c => c.id === selectedId ? { ...c, industryId } : c))
     } catch {
-      showToast({ kind: 'warn', text: 'Link saved in demo mode.' })
-      setCorrelation(prev => prev ? {
-        ...prev,
-        complaint: {
-          ...prev.complaint,
-          industry: { id: industryId, name: prev.nearbyIndustries.find(i => i.id === industryId)?.name ?? industryId },
-        },
-      } : null)
+      showToast({ kind: 'danger', text: 'Failed to link industry.' })
     } finally {
       setLinking(null)
     }
   }
 
-  const linked = correlation?.complaint.industry?.id
+  const selected = complaints.find(c => c.id === selectedId)
 
   return (
     <div className="h-full flex flex-col bg-surface-page overflow-hidden">
@@ -187,7 +194,7 @@ export function IndustryCorrelationCanvas() {
         </div>
         <div className="flex-1">
           <div className="text-[15px] font-bold text-txt-primary">Industry Correlation</div>
-          <div className="text-[11px] text-txt-secondary">Match complaints to nearby industries with exceedances</div>
+          <div className="text-[11px] text-txt-secondary">Match complaints to nearby RED-category industries</div>
         </div>
       </div>
 
@@ -197,6 +204,8 @@ export function IndustryCorrelationCanvas() {
           <div className="text-[11px] font-bold uppercase tracking-widest text-txt-tertiary mb-2">Select Complaint</div>
           {loadingList ? (
             <div className="text-[12px] text-txt-tertiary">Loading complaints…</div>
+          ) : complaints.length === 0 ? (
+            <div className="text-[12px] text-txt-tertiary">No complaints found.</div>
           ) : (
             <div className="relative">
               <select
@@ -206,7 +215,7 @@ export function IndustryCorrelationCanvas() {
               >
                 {complaints.map(c => (
                   <option key={c.id} value={c.id}>
-                    [{c.id}] {c.description.slice(0, 60)}{c.description.length > 60 ? '…' : ''}
+                    {c.description.slice(0, 70)}{c.description.length > 70 ? '…' : ''}
                   </option>
                 ))}
               </select>
@@ -214,24 +223,21 @@ export function IndustryCorrelationCanvas() {
             </div>
           )}
 
-          {correlation?.complaint && (
+          {selected && (
             <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
-              {correlation.complaint.category && (
+              {selected.category && (
                 <span className="bg-primary-light text-primary px-2 py-0.5 rounded-full font-semibold">
-                  {correlation.complaint.category}
+                  {CAT_LABEL[selected.category] ?? selected.category.replace(/_/g, ' ')}
                 </span>
               )}
-              {correlation.complaint.severity && (
-                <span className={`px-2 py-0.5 rounded-full font-semibold ${SEV_BADGE[correlation.complaint.severity] ?? ''}`}>
-                  {correlation.complaint.severity}
+              {selected.severity && (
+                <span className={`px-2 py-0.5 rounded-full font-semibold ${SEV_BADGE[selected.severity] ?? ''}`}>
+                  {selected.severity}
                 </span>
               )}
-              {correlation.complaint.location?.district && (
-                <span className="text-txt-secondary">{correlation.complaint.location.district}</span>
-              )}
-              {linked && (
+              {linkedId && (
                 <span className="bg-ok-light text-ok px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
-                  <Check className="w-3 h-3" /> Linked: {correlation.complaint.industry?.name}
+                  <Check className="w-3 h-3" /> Linked
                 </span>
               )}
             </div>
@@ -239,87 +245,76 @@ export function IndustryCorrelationCanvas() {
         </div>
 
         {/* Nearby industries */}
-        {loadingCorr ? (
+        {loadingInd ? (
           <div className="flex items-center gap-2 py-8 justify-center text-txt-tertiary text-[13px]">
             <RefreshCw className="w-4 h-4 animate-spin" /> Finding nearby industries…
           </div>
-        ) : correlation && correlation.nearbyIndustries.length === 0 ? (
-          <div className="text-[13px] text-txt-tertiary text-center py-8">No nearby industries found.</div>
+        ) : industries.length === 0 ? (
+          <div className="text-[13px] text-txt-tertiary text-center py-8">No industries found.</div>
         ) : (
           <div className="space-y-3">
             <div className="text-[11px] font-bold uppercase tracking-widest text-txt-tertiary">
-              Nearby Industries ({correlation?.nearbyIndustries.length ?? 0})
+              Top RED-category Industries ({industries.length})
             </div>
-            {(correlation?.nearbyIndustries ?? []).map(ind => (
-              <div
-                key={ind.id}
-                className={`bg-white rounded-card border shadow-card p-4 transition-all ${
-                  linked === ind.id ? 'border-ok ring-1 ring-ok' : 'border-bdr-light'
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-surface-secondary flex items-center justify-center flex-shrink-0">
-                    <Building2 className="w-4 h-4 text-txt-secondary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <div className="text-[13px] font-bold text-txt-primary">{ind.name}</div>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full ${CATEGORY_BADGE[ind.category] ?? ''}`}>
-                        {ind.category}
-                      </span>
+            {industries.map(ind => {
+              const isLinked = linkedId === ind.id
+              const distanceKm = selected?.lat && selected?.lng && ind.lat && ind.lng
+                ? distKm(selected.lat, selected.lng, ind.lat, ind.lng).toFixed(1)
+                : null
+              return (
+                <div
+                  key={ind.id}
+                  className={`bg-white rounded-card border shadow-card p-4 transition-all ${
+                    isLinked ? 'border-ok ring-1 ring-ok' : 'border-bdr-light'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-surface-secondary flex items-center justify-center flex-shrink-0">
+                      <Building2 className="w-4 h-4 text-txt-secondary" />
                     </div>
-                    <div className="text-[11px] text-txt-secondary mt-0.5">
-                      {ind.sector} · {ind.district}
-                      {ind.distanceKm !== undefined && ` · ${ind.distanceKm} km away`}
-                    </div>
-
-                    {/* Exceedance summary */}
-                    <div className="mt-2 flex items-center gap-2 flex-wrap">
-                      {ind.exceedanceCount > 0 ? (
-                        <span className="flex items-center gap-1 text-[11px] font-bold text-danger">
-                          <AlertTriangle className="w-3 h-3" />
-                          {ind.exceedanceCount} exceedances
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="text-[13px] font-bold text-txt-primary">{ind.name}</div>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full ${CATEGORY_BADGE[ind.category] ?? ''}`}>
+                          {ind.category}
                         </span>
-                      ) : (
-                        <span className="text-[11px] text-ok font-semibold">No exceedances</span>
-                      )}
+                      </div>
+                      <div className="text-[11px] text-txt-secondary mt-0.5">
+                        {ind.sector?.name ?? '—'} · {ind.district?.name ?? '—'}
+                        {distanceKm && ` · ~${distanceKm} km away`}
+                      </div>
+                      <div className="text-[11px] text-txt-tertiary mt-0.5">{ind.ucNumber}</div>
                     </div>
 
-                    {/* Recent exceedances */}
-                    {ind.recentExceedances.length > 0 && (
-                      <div className="mt-2 space-y-1">
-                        {ind.recentExceedances.map((ex, i) => (
-                          <div key={i} className="flex items-center gap-2 text-[10px]">
-                            <span className={`px-1.5 py-0.5 rounded-full font-bold ${SEV_BADGE[ex.severity] ?? ''}`}>{ex.severity}</span>
-                            <span className="text-txt-secondary font-semibold">{ex.parameter}</span>
-                            <span className="text-txt-tertiary">{fmt(ex.detectedAt)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    {/* Link button */}
+                    <button
+                      onClick={() => { void handleLink(ind.id) }}
+                      disabled={linking === ind.id || isLinked}
+                      className={`flex-shrink-0 flex items-center gap-1 text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-colors ${
+                        isLinked
+                          ? 'bg-ok-light text-ok cursor-default'
+                          : 'bg-primary-light text-primary hover:bg-primary hover:text-white disabled:opacity-50'
+                      }`}
+                    >
+                      {isLinked ? (
+                        <><Check className="w-3 h-3" /> Linked</>
+                      ) : linking === ind.id ? (
+                        <><RefreshCw className="w-3 h-3 animate-spin" /> Linking…</>
+                      ) : (
+                        <><Link2 className="w-3 h-3" /> Link</>
+                      )}
+                    </button>
                   </div>
 
-                  {/* Link button */}
-                  <button
-                    onClick={() => { void handleLink(ind.id) }}
-                    disabled={linking === ind.id || linked === ind.id}
-                    className={`flex-shrink-0 flex items-center gap-1 text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-colors ${
-                      linked === ind.id
-                        ? 'bg-ok-light text-ok cursor-default'
-                        : 'bg-primary-light text-primary hover:bg-primary hover:text-white disabled:opacity-50'
-                    }`}
-                  >
-                    {linked === ind.id ? (
-                      <><Check className="w-3 h-3" /> Linked</>
-                    ) : linking === ind.id ? (
-                      <><RefreshCw className="w-3 h-3 animate-spin" /> Linking…</>
-                    ) : (
-                      <><Link2 className="w-3 h-3" /> Link</>
-                    )}
-                  </button>
+                  {isLinked && (
+                    <div className="mt-2 flex items-center gap-1 text-[11px] text-ok">
+                      <AlertTriangle className="w-3 h-3" />
+                      This industry is linked to the selected complaint.
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

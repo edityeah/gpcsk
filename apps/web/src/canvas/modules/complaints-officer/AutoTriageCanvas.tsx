@@ -1,5 +1,6 @@
 // AutoTriageCanvas — Complaints Officer
-// Donut of complaint categories + bar of severity + last-7-day intake sparkline.
+// Donut of complaint categories + bar of severity + last-7-day intake.
+// Builds analytics from /api/complaints?limit=200 since triage-stats endpoint is not available.
 
 import { useEffect, useState, useCallback } from 'react'
 import {
@@ -12,14 +13,25 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  Legend,
 } from 'recharts'
 import { Activity, RefreshCw, TrendingUp } from 'lucide-react'
 import { api } from '../../../lib/api.js'
 import { useAuth } from '../../../context/AuthContext.js'
 import { useApp } from '../../../context/AppContext.js'
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Real API complaint shape ──────────────────────────────────────────────────
+
+interface ApiComplaint {
+  id: string
+  channel: string
+  receivedAt: string
+  category: string       // e.g. 'AIR_POLLUTION', 'WATER_POLLUTION', 'NOISE', etc.
+  severity: string       // 'MINOR' | 'MAJOR' | 'CRITICAL'
+  state: string          // 'NEW' | 'ASSIGNED' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'
+  description: string
+}
+
+// ─── Internal stats shape ─────────────────────────────────────────────────────
 
 interface TriageStats {
   categoryBreakdown: Array<{ category: string; count: number }>
@@ -30,48 +42,33 @@ interface TriageStats {
   avgResolutionDays: number
 }
 
-// ─── Demo data ────────────────────────────────────────────────────────────────
+const CATEGORY_LABEL: Record<string, string> = {
+  AIR_POLLUTION:    'Air Pollution',
+  WATER_POLLUTION:  'Water Pollution',
+  NOISE:            'Noise',
+  HAZARDOUS_WASTE:  'Hazardous Waste',
+  ODOUR:            'Odour',
+  BURNING:          'Burning',
+  ILLEGAL_DISCHARGE:'Illegal Discharge',
+  OTHER:            'Other',
+}
 
-const DEMO_STATS: TriageStats = {
-  categoryBreakdown: [
-    { category: 'Air Pollution', count: 112 },
-    { category: 'Water Pollution', count: 78 },
-    { category: 'Noise', count: 45 },
-    { category: 'Hazardous Waste', count: 34 },
-    { category: 'Odour', count: 21 },
-    { category: 'Other', count: 10 },
-  ],
-  severityBreakdown: [
-    { severity: 'critical', count: 18 },
-    { severity: 'high', count: 52 },
-    { severity: 'medium', count: 107 },
-    { severity: 'low', count: 123 },
-  ],
-  last7Days: [
-    { date: 'Mon', count: 14 },
-    { date: 'Tue', count: 22 },
-    { date: 'Wed', count: 18 },
-    { date: 'Thu', count: 31 },
-    { date: 'Fri', count: 27 },
-    { date: 'Sat', count: 9 },
-    { date: 'Sun', count: 7 },
-  ],
-  totalOpen: 168,
-  totalResolved: 132,
-  avgResolutionDays: 4.3,
+const SEVERITY_LABEL: Record<string, string> = {
+  CRITICAL: 'Critical',
+  MAJOR:    'Major',
+  MINOR:    'Minor',
 }
 
 // ─── Palette ─────────────────────────────────────────────────────────────────
 
 const CATEGORY_COLORS = [
-  '#386AF6', '#4CAF50', '#FFB300', '#E53935', '#7C3AED', '#0EA5E9',
+  '#386AF6', '#4CAF50', '#FFB300', '#E53935', '#7C3AED', '#0EA5E9', '#F97316', '#7383A5',
 ]
 
 const SEVERITY_COLORS: Record<string, string> = {
-  critical: '#E53935',
-  high: '#F97316',
-  medium: '#FFB300',
-  low: '#4CAF50',
+  CRITICAL: '#E53935',
+  MAJOR:    '#F97316',
+  MINOR:    '#FFB300',
 }
 
 // ─── Custom donut label ───────────────────────────────────────────────────────
@@ -83,10 +80,9 @@ interface LabelProps {
   innerRadius: number
   outerRadius: number
   percent: number
-  name: string
 }
 
-function renderLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }: LabelProps) {
+function renderLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent }: LabelProps) {
   if (percent < 0.05) return null
   const RADIAN = Math.PI / 180
   const radius = innerRadius + (outerRadius - innerRadius) * 0.6
@@ -111,6 +107,60 @@ function StatCard({ label, value, sub, color }: { label: string; value: string |
   )
 }
 
+// ─── Build stats from raw complaints ─────────────────────────────────────────
+
+function buildStats(complaints: ApiComplaint[]): TriageStats {
+  const catMap = new Map<string, number>()
+  const sevMap = new Map<string, number>()
+  const dayMap = new Map<string, number>()
+  let totalOpen = 0
+  let totalResolved = 0
+
+  const now = Date.now()
+  const sevenDaysAgo = now - 7 * 24 * 3600_000
+
+  // Seed 7-day buckets
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now - i * 24 * 3600_000)
+    const key = d.toLocaleDateString('en-IN', { weekday: 'short' })
+    dayMap.set(key, 0)
+  }
+
+  for (const c of complaints) {
+    // Category
+    const catKey = CATEGORY_LABEL[c.category] ?? c.category.replace(/_/g, ' ')
+    catMap.set(catKey, (catMap.get(catKey) ?? 0) + 1)
+
+    // Severity
+    const sevLabel = SEVERITY_LABEL[c.severity] ?? c.severity
+    sevMap.set(sevLabel, (sevMap.get(sevLabel) ?? 0) + 1)
+
+    // Open/resolved
+    if (c.state === 'RESOLVED' || c.state === 'CLOSED') totalResolved++
+    else totalOpen++
+
+    // 7-day intake
+    const received = new Date(c.receivedAt).getTime()
+    if (received >= sevenDaysAgo) {
+      const dayKey = new Date(c.receivedAt).toLocaleDateString('en-IN', { weekday: 'short' })
+      dayMap.set(dayKey, (dayMap.get(dayKey) ?? 0) + 1)
+    }
+  }
+
+  return {
+    categoryBreakdown: Array.from(catMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([category, count]) => ({ category, count })),
+    severityBreakdown: ['Critical', 'Major', 'Minor']
+      .map(s => ({ severity: s, count: sevMap.get(s) ?? 0 }))
+      .filter(s => s.count > 0),
+    last7Days: Array.from(dayMap.entries()).map(([date, count]) => ({ date, count })),
+    totalOpen,
+    totalResolved,
+    avgResolutionDays: 0, // not available from list endpoint
+  }
+}
+
 // ─── Main canvas ─────────────────────────────────────────────────────────────
 
 export function AutoTriageCanvas() {
@@ -120,15 +170,22 @@ export function AutoTriageCanvas() {
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
+    if (!token) return
     setLoading(true)
     try {
-      const res = await api<TriageStats>('/api/complaints/triage-stats', {
-        token: token ?? undefined,
-      })
-      setStats(res)
+      const res = await api<ApiComplaint[] | { complaints?: ApiComplaint[]; data?: ApiComplaint[] }>(
+        '/api/complaints?limit=200',
+        { token },
+      )
+      const complaints: ApiComplaint[] = Array.isArray(res)
+        ? (res as ApiComplaint[])
+        : ((res as { complaints?: ApiComplaint[]; data?: ApiComplaint[] }).complaints
+          ?? (res as { data?: ApiComplaint[] }).data
+          ?? [])
+      setStats(buildStats(complaints))
     } catch {
-      showToast({ kind: 'warn', text: 'Using demo data — API not reachable.' })
-      setStats(DEMO_STATS)
+      showToast({ kind: 'danger', text: 'Failed to load complaints data.' })
+      setStats(null)
     } finally {
       setLoading(false)
     }
@@ -136,7 +193,7 @@ export function AutoTriageCanvas() {
 
   useEffect(() => { void load() }, [load])
 
-  const s = stats ?? DEMO_STATS
+  const s = stats
 
   return (
     <div className="h-full flex flex-col bg-surface-page overflow-hidden">
@@ -158,104 +215,117 @@ export function AutoTriageCanvas() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-        {/* KPI row */}
-        <div className="flex gap-3 flex-wrap">
-          <StatCard label="Open complaints" value={s.totalOpen} color="text-danger" />
-          <StatCard label="Resolved" value={s.totalResolved} color="text-ok" />
-          <StatCard label="Avg resolution" value={`${s.avgResolutionDays}d`} sub="last 30 days" color="text-primary" />
+      {loading ? (
+        <div className="flex items-center justify-center flex-1 text-txt-tertiary text-[14px]">
+          <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Loading analytics…
         </div>
-
-        {/* Donut — category breakdown */}
-        <div className="bg-white rounded-card border border-bdr-light shadow-card p-4">
-          <div className="text-[12px] font-bold uppercase tracking-widest text-txt-tertiary mb-3">
-            Complaint Category Breakdown
+      ) : !s ? (
+        <div className="flex items-center justify-center flex-1 text-danger text-[14px]">
+          Failed to load data.
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+          {/* KPI row */}
+          <div className="flex gap-3 flex-wrap">
+            <StatCard label="Open complaints" value={s.totalOpen} color="text-danger" />
+            <StatCard label="Resolved" value={s.totalResolved} color="text-ok" />
+            <StatCard label="Total" value={s.totalOpen + s.totalResolved} sub="sample of 200" color="text-primary" />
           </div>
-          <div className="flex flex-col lg:flex-row gap-4 items-center">
-            <div className="w-full lg:w-[220px] h-[200px]">
+
+          {/* Donut — category breakdown */}
+          {s.categoryBreakdown.length > 0 && (
+            <div className="bg-white rounded-card border border-bdr-light shadow-card p-4">
+              <div className="text-[12px] font-bold uppercase tracking-widest text-txt-tertiary mb-3">
+                Complaint Category Breakdown
+              </div>
+              <div className="flex flex-col lg:flex-row gap-4 items-center">
+                <div className="w-full lg:w-[220px] h-[200px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={s.categoryBreakdown}
+                        dataKey="count"
+                        nameKey="category"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={55}
+                        outerRadius={90}
+                        labelLine={false}
+                        label={renderLabel as (props: unknown) => JSX.Element | null}
+                      >
+                        {s.categoryBreakdown.map((entry, i) => (
+                          <Cell key={entry.category} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(v: number) => [`${v} complaints`, '']} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="flex-1 grid grid-cols-2 gap-2">
+                  {s.categoryBreakdown.map((entry, i) => (
+                    <div key={entry.category} className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }} />
+                      <div>
+                        <div className="text-[11px] font-semibold text-txt-primary">{entry.category}</div>
+                        <div className="text-[10px] text-txt-tertiary">{entry.count} complaints</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Bar — severity distribution */}
+          {s.severityBreakdown.length > 0 && (
+            <div className="bg-white rounded-card border border-bdr-light shadow-card p-4">
+              <div className="text-[12px] font-bold uppercase tracking-widest text-txt-tertiary mb-3">
+                Severity Distribution
+              </div>
+              <div className="h-[180px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={s.severityBreakdown} barSize={32}>
+                    <XAxis dataKey="severity" tick={{ fontSize: 11, fill: '#7383A5' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: '#B8C0CC' }} axisLine={false} tickLine={false} />
+                    <Tooltip
+                      contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 12 }}
+                      formatter={(v: number) => [`${v}`, 'Complaints']}
+                    />
+                    <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                      {s.severityBreakdown.map(entry => (
+                        <Cell key={entry.severity} fill={SEVERITY_COLORS[entry.severity.toUpperCase()] ?? '#386AF6'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {/* Bar — last-7-day intake */}
+          <div className="bg-white rounded-card border border-bdr-light shadow-card p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <TrendingUp className="w-4 h-4 text-primary" />
+              <div className="text-[12px] font-bold uppercase tracking-widest text-txt-tertiary">
+                7-Day Intake
+              </div>
+            </div>
+            <div className="h-[160px]">
               <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={s.categoryBreakdown}
-                    dataKey="count"
-                    nameKey="category"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={90}
-                    labelLine={false}
-                    label={renderLabel as (props: unknown) => JSX.Element | null}
-                  >
-                    {s.categoryBreakdown.map((entry, i) => (
-                      <Cell key={entry.category} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(v: number) => [`${v} complaints`, '']} />
-                </PieChart>
+                <BarChart data={s.last7Days} barSize={28}>
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#7383A5' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: '#B8C0CC' }} axisLine={false} tickLine={false} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 12 }}
+                    formatter={(v: number) => [`${v}`, 'Complaints']}
+                  />
+                  <Bar dataKey="count" name="Received" fill="#386AF6" radius={[4, 4, 0, 0]} />
+                </BarChart>
               </ResponsiveContainer>
             </div>
-            <div className="flex-1 grid grid-cols-2 gap-2">
-              {s.categoryBreakdown.map((entry, i) => (
-                <div key={entry.category} className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }} />
-                  <div>
-                    <div className="text-[11px] font-semibold text-txt-primary">{entry.category}</div>
-                    <div className="text-[10px] text-txt-tertiary">{entry.count} complaints</div>
-                  </div>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
-
-        {/* Bar — severity distribution */}
-        <div className="bg-white rounded-card border border-bdr-light shadow-card p-4">
-          <div className="text-[12px] font-bold uppercase tracking-widest text-txt-tertiary mb-3">
-            Severity Distribution
-          </div>
-          <div className="h-[180px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={s.severityBreakdown} barSize={32}>
-                <XAxis dataKey="severity" tick={{ fontSize: 11, fill: '#7383A5' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: '#B8C0CC' }} axisLine={false} tickLine={false} />
-                <Tooltip
-                  contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 12 }}
-                  formatter={(v: number) => [`${v}`, 'Complaints']}
-                />
-                <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                  {s.severityBreakdown.map(entry => (
-                    <Cell key={entry.severity} fill={SEVERITY_COLORS[entry.severity] ?? '#386AF6'} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Bar — last-7-day intake */}
-        <div className="bg-white rounded-card border border-bdr-light shadow-card p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <TrendingUp className="w-4 h-4 text-primary" />
-            <div className="text-[12px] font-bold uppercase tracking-widest text-txt-tertiary">
-              7-Day Intake
-            </div>
-          </div>
-          <div className="h-[160px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={s.last7Days} barSize={28}>
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#7383A5' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: '#B8C0CC' }} axisLine={false} tickLine={false} />
-                <Tooltip
-                  contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 12 }}
-                  formatter={(v: number) => [`${v}`, 'Complaints']}
-                />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="count" name="Complaints received" fill="#386AF6" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   )
 }

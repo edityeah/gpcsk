@@ -1,5 +1,6 @@
 // CitizenResponseTrackerCanvas — Complaints Officer
-// Kanban-style columns by complaint state. Cards are expandable (same as inbox thread).
+// Kanban-style columns by complaint state.
+// Real API returns plain array with UPPERCASE states: NEW, ASSIGNED, IN_PROGRESS, RESOLVED, CLOSED.
 
 import { useEffect, useState, useCallback } from 'react'
 import {
@@ -18,34 +19,27 @@ import { api } from '../../../lib/api.js'
 import { useAuth } from '../../../context/AuthContext.js'
 import { useApp } from '../../../context/AppContext.js'
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Real API complaint shape ──────────────────────────────────────────────────
 
-interface ComplaintResponse {
-  id: string
-  respondedBy: string
-  respondedAt: string
-  message: string
-  action?: string
-}
-
-interface Complaint {
+interface ApiComplaint {
   id: string
   channel: string
   receivedAt: string
-  complainant?: { name?: string }
-  location?: { district?: string }
-  category?: string
-  severity?: string
+  complainant?: { name?: string; email?: string; phone?: string; anonymous?: boolean }
+  lat: number | null
+  lng: number | null
+  category: string    // e.g. 'AIR_POLLUTION'
+  severity: string    // 'MINOR' | 'MAJOR' | 'CRITICAL'
   description: string
-  state: 'new' | 'assigned' | 'in_progress' | 'resolved' | 'closed' | 'duplicate'
-  assignedTo?: string
-  responses?: ComplaintResponse[]
+  state: string       // 'NEW' | 'ASSIGNED' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'
+  assignedToId: string | null
+  industryId: string | null
 }
 
 // ─── Kanban column config ─────────────────────────────────────────────────────
 
 interface KanbanColumn {
-  state: Complaint['state']
+  state: string
   label: string
   icon: React.ReactNode
   headerCls: string
@@ -53,33 +47,29 @@ interface KanbanColumn {
 }
 
 const COLUMNS: KanbanColumn[] = [
-  { state: 'new',         label: 'New',         icon: <Clock className="w-3.5 h-3.5" />,        headerCls: 'bg-primary-light text-primary',      borderCls: 'border-primary/30' },
-  { state: 'assigned',    label: 'Assigned',     icon: <User className="w-3.5 h-3.5" />,          headerCls: 'bg-indigo-100 text-indigo-700',       borderCls: 'border-indigo-300' },
-  { state: 'in_progress', label: 'In Progress',  icon: <RefreshCw className="w-3.5 h-3.5" />,    headerCls: 'bg-warn-light text-yellow-800',       borderCls: 'border-warn' },
-  { state: 'resolved',    label: 'Resolved',     icon: <CheckCircle2 className="w-3.5 h-3.5" />, headerCls: 'bg-ok-light text-ok',                borderCls: 'border-ok/40' },
-  { state: 'closed',      label: 'Closed',       icon: <CheckCircle2 className="w-3.5 h-3.5" />, headerCls: 'bg-surface-secondary text-txt-tertiary', borderCls: 'border-bdr' },
-]
-
-// ─── Demo data ────────────────────────────────────────────────────────────────
-
-const DEMO_COMPLAINTS: Complaint[] = [
-  { id: 'C-001', channel: 'web',   receivedAt: new Date(Date.now() - 3600_000).toISOString(),   category: 'Air Pollution',   severity: 'high',     state: 'new',         complainant: { name: 'Ramesh Patel' },  location: { district: 'Ahmedabad' }, description: 'Thick black smoke from GIDC Vatva chemical unit stack near residential area.' },
-  { id: 'C-005', channel: 'web',   receivedAt: new Date(Date.now() - 259_200_000).toISOString(), category: 'Air Pollution',  severity: 'high',     state: 'new',         complainant: { name: 'Geeta Desai' },   location: { district: 'Rajkot' },   description: 'Ceramic kilns emitting excessive particulate matter. AQI very poor for a week.' },
-  { id: 'C-002', channel: 'phone', receivedAt: new Date(Date.now() - 7_200_000).toISOString(),  category: 'Water Pollution', severity: 'critical', state: 'assigned',    complainant: { name: 'Fatima Sheikh' }, location: { district: 'Surat' },    description: 'Dye effluent discharged directly into drain without treatment. Fish dying.', responses: [{ id: 'R-1', respondedBy: 'CO-001', respondedAt: new Date(Date.now() - 5_000_000).toISOString(), message: 'Complaint assigned to monitoring team.', action: 'Assigned' }] },
-  { id: 'C-006', channel: 'email', receivedAt: new Date(Date.now() - 18_000_000).toISOString(), category: 'Hazardous Waste', severity: 'medium',  state: 'assigned',    complainant: { name: 'Sanjay Modi' },  location: { district: 'Bharuch' },  description: 'Drums of waste stored in open compound without containment labels.' },
-  { id: 'C-003', channel: 'email', receivedAt: new Date(Date.now() - 86_400_000).toISOString(), category: 'Hazardous Waste', severity: 'medium',  state: 'in_progress', complainant: { name: 'Anand Mehta' },  location: { district: 'Bharuch' },  description: 'Chemical waste seeping into ground after heavy rains.', responses: [{ id: 'R-2', respondedBy: 'CO-002', respondedAt: new Date(Date.now() - 50_000_000).toISOString(), message: 'Site visit scheduled for tomorrow.' }] },
-  { id: 'C-007', channel: 'web',   receivedAt: new Date(Date.now() - 100_000_000).toISOString(), category: 'Noise',         severity: 'low',      state: 'in_progress', complainant: { name: 'Priya Joshi' },  location: { district: 'Vadodara' }, description: 'Factory machines running 24/7 causing noise disturbance in residential colony.' },
-  { id: 'C-004', channel: 'walk-in', receivedAt: new Date(Date.now() - 172_800_000).toISOString(), category: 'Noise',      severity: 'low',      state: 'resolved',    complainant: { name: 'Suresh Bhai' },  location: { district: 'Valsad' },   description: 'Compressor noise after 10 PM. Resolved with warning notice.', responses: [{ id: 'R-3', respondedBy: 'CO-002', respondedAt: new Date(Date.now() - 100_000_000).toISOString(), message: 'Warning notice issued. Operations restricted 7 AM–9 PM.', action: 'Warning issued' }] },
-  { id: 'C-008', channel: 'phone', receivedAt: new Date(Date.now() - 345_600_000).toISOString(), category: 'Air Pollution', severity: 'medium',  state: 'closed',      complainant: { name: 'Vinod Rathod' }, location: { district: 'Morbi' },    description: 'Dust from ceramic plant affecting nearby school premises.', responses: [{ id: 'R-4', respondedBy: 'CO-001', respondedAt: new Date(Date.now() - 300_000_000).toISOString(), message: 'Unit installed dust suppression system. Case closed.', action: 'Closed' }] },
+  { state: 'NEW',         label: 'New',         icon: <Clock className="w-3.5 h-3.5" />,        headerCls: 'bg-primary-light text-primary',      borderCls: 'border-primary/30' },
+  { state: 'ASSIGNED',    label: 'Assigned',     icon: <User className="w-3.5 h-3.5" />,          headerCls: 'bg-indigo-100 text-indigo-700',       borderCls: 'border-indigo-300' },
+  { state: 'IN_PROGRESS', label: 'In Progress',  icon: <RefreshCw className="w-3.5 h-3.5" />,    headerCls: 'bg-warn-light text-yellow-800',       borderCls: 'border-warn' },
+  { state: 'RESOLVED',    label: 'Resolved',     icon: <CheckCircle2 className="w-3.5 h-3.5" />, headerCls: 'bg-ok-light text-ok',                borderCls: 'border-ok/40' },
+  { state: 'CLOSED',      label: 'Closed',       icon: <CheckCircle2 className="w-3.5 h-3.5" />, headerCls: 'bg-surface-secondary text-txt-tertiary', borderCls: 'border-bdr' },
 ]
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const SEVERITY_BADGE: Record<string, string> = {
-  critical: 'bg-danger-light text-danger font-bold',
-  high: 'bg-orange-100 text-orange-700 font-semibold',
-  medium: 'bg-warn-light text-yellow-800',
-  low: 'bg-ok-light text-ok',
+  CRITICAL: 'bg-danger-light text-danger font-bold',
+  MAJOR:    'bg-orange-100 text-orange-700 font-semibold',
+  MINOR:    'bg-warn-light text-yellow-800',
+}
+
+const CAT_LABEL: Record<string, string> = {
+  AIR_POLLUTION:    'Air Pollution',
+  WATER_POLLUTION:  'Water Pollution',
+  NOISE:            'Noise',
+  HAZARDOUS_WASTE:  'Hazardous Waste',
+  ODOUR:            'Odour',
+  BURNING:          'Burning',
+  ILLEGAL_DISCHARGE:'Illegal Discharge',
 }
 
 function fmt(iso: string) {
@@ -89,7 +79,7 @@ function fmt(iso: string) {
 // ─── Card component ───────────────────────────────────────────────────────────
 
 function ComplaintCard({ complaint, token, onRefresh }: {
-  complaint: Complaint
+  complaint: ApiComplaint
   token: string | null
   onRefresh: () => void
 }) {
@@ -112,12 +102,13 @@ function ComplaintCard({ complaint, token, onRefresh }: {
       setReplyText('')
       onRefresh()
     } catch {
-      showToast({ kind: 'warn', text: 'Reply logged in demo mode.' })
-      setReplyText('')
+      showToast({ kind: 'danger', text: 'Failed to send reply.' })
     } finally {
       setSending(false)
     }
   }
+
+  const catLabel = CAT_LABEL[complaint.category] ?? complaint.category.replace(/_/g, ' ')
 
   return (
     <div className="bg-white rounded-xl border border-bdr-light shadow-card overflow-hidden">
@@ -126,27 +117,24 @@ function ComplaintCard({ complaint, token, onRefresh }: {
         className="w-full text-left px-3 py-2.5 hover:bg-surface-page/60 transition-colors"
       >
         <div className="flex items-center gap-2 mb-1 flex-wrap">
-          <span className="text-[10px] font-bold text-txt-tertiary">{complaint.id}</span>
+          <span className="text-[10px] font-bold text-txt-tertiary truncate max-w-[120px]">{complaint.id.slice(-8)}</span>
           {complaint.severity && (
             <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${SEVERITY_BADGE[complaint.severity] ?? ''}`}>
               {complaint.severity}
             </span>
           )}
-          {(complaint.responses ?? []).length > 0 && (
-            <span className="text-[9px] text-primary flex items-center gap-0.5 ml-auto">
-              <MessageSquare className="w-2.5 h-2.5" /> {complaint.responses!.length}
+          {catLabel && (
+            <span className="text-[9px] text-primary ml-auto flex items-center gap-0.5">
+              <MessageSquare className="w-2.5 h-2.5" /> {catLabel.slice(0, 12)}
             </span>
           )}
         </div>
         <div className="text-[12px] text-txt-primary line-clamp-2 leading-snug">{complaint.description}</div>
         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-          {complaint.complainant?.name && (
+          {complaint.complainant?.name && !complaint.complainant.anonymous && (
             <span className="text-[10px] text-txt-tertiary flex items-center gap-0.5">
               <User className="w-2.5 h-2.5" /> {complaint.complainant.name}
             </span>
-          )}
-          {complaint.location?.district && (
-            <span className="text-[10px] text-txt-tertiary">{complaint.location.district}</span>
           )}
           <span className="text-[10px] text-txt-tertiary ml-auto">{fmt(complaint.receivedAt)}</span>
         </div>
@@ -160,26 +148,9 @@ function ComplaintCard({ complaint, token, onRefresh }: {
           <div className="text-[11px] text-txt-primary leading-relaxed bg-surface-secondary rounded-lg p-2 mt-2">
             {complaint.description}
           </div>
-
-          {(complaint.responses ?? []).length > 0 && (
-            <div className="space-y-1.5">
-              {(complaint.responses ?? []).map(r => (
-                <div key={r.id} className="bg-primary-light rounded-lg p-2">
-                  <div className="flex items-center gap-1 mb-0.5">
-                    <span className="text-[10px] font-bold text-primary">{r.respondedBy}</span>
-                    <span className="text-[9px] text-txt-tertiary">{fmt(r.respondedAt)}</span>
-                  </div>
-                  <div className="text-[11px] text-txt-primary">{r.message}</div>
-                  {r.action && (
-                    <div className="mt-0.5 text-[9px] font-semibold text-flag bg-flag-light inline-block px-1.5 py-0.5 rounded-full">
-                      {r.action}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+          {complaint.channel && (
+            <div className="text-[10px] text-txt-tertiary">Channel: {complaint.channel}</div>
           )}
-
           <form onSubmit={handleReply} className="flex items-center gap-1.5 border border-bdr rounded-lg p-1.5">
             <input
               value={replyText}
@@ -206,19 +177,26 @@ function ComplaintCard({ complaint, token, onRefresh }: {
 export function CitizenResponseTrackerCanvas() {
   const { token } = useAuth()
   const { showToast } = useApp()
-  const [complaints, setComplaints] = useState<Complaint[]>([])
+  const [complaints, setComplaints] = useState<ApiComplaint[]>([])
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
+    if (!token) return
     setLoading(true)
     try {
-      const res = await api<{ data: Complaint[] }>('/api/complaints?limit=100', {
-        token: token ?? undefined,
-      })
-      setComplaints(res.data ?? [])
+      const res = await api<ApiComplaint[] | { complaints?: ApiComplaint[]; data?: ApiComplaint[] }>(
+        '/api/complaints?limit=100',
+        { token },
+      )
+      const list: ApiComplaint[] = Array.isArray(res)
+        ? (res as ApiComplaint[])
+        : ((res as { complaints?: ApiComplaint[]; data?: ApiComplaint[] }).complaints
+          ?? (res as { data?: ApiComplaint[] }).data
+          ?? [])
+      setComplaints(list)
     } catch {
-      showToast({ kind: 'warn', text: 'Using demo data — API not reachable.' })
-      setComplaints(DEMO_COMPLAINTS)
+      showToast({ kind: 'danger', text: 'Failed to load complaints.' })
+      setComplaints([])
     } finally {
       setLoading(false)
     }
@@ -226,7 +204,9 @@ export function CitizenResponseTrackerCanvas() {
 
   useEffect(() => { void load() }, [load])
 
-  const byState = (state: Complaint['state']) => complaints.filter(c => c.state === state)
+  const byState = (state: string) => complaints.filter(c => c.state === state)
+
+  const criticalNewCount = complaints.filter(c => c.severity === 'CRITICAL' && c.state === 'NEW').length
 
   return (
     <div className="h-full flex flex-col bg-surface-page overflow-hidden">
@@ -238,7 +218,7 @@ export function CitizenResponseTrackerCanvas() {
         <div className="flex-1">
           <div className="text-[15px] font-bold text-txt-primary">Citizen Response Tracker</div>
           <div className="text-[11px] text-txt-secondary">
-            {loading ? 'Loading…' : `${complaints.length} total · ${byState('new').length} new · ${byState('resolved').length} resolved`}
+            {loading ? 'Loading…' : `${complaints.length} total · ${byState('NEW').length} new · ${byState('RESOLVED').length} resolved`}
           </div>
         </div>
         <button
@@ -254,6 +234,10 @@ export function CitizenResponseTrackerCanvas() {
       {loading ? (
         <div className="flex items-center justify-center flex-1 text-txt-tertiary text-[13px]">
           <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Loading…
+        </div>
+      ) : complaints.length === 0 ? (
+        <div className="flex items-center justify-center flex-1 text-txt-tertiary text-[14px]">
+          No complaints found.
         </div>
       ) : (
         <div className="flex-1 overflow-x-auto">
@@ -298,11 +282,11 @@ export function CitizenResponseTrackerCanvas() {
       )}
 
       {/* Critical alert bar */}
-      {!loading && complaints.filter(c => c.severity === 'critical' && c.state === 'new').length > 0 && (
+      {!loading && criticalNewCount > 0 && (
         <div className="flex-shrink-0 bg-danger-light border-t border-danger/20 px-5 py-2 flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-danger flex-shrink-0" />
           <span className="text-[12px] font-bold text-danger">
-            {complaints.filter(c => c.severity === 'critical' && c.state === 'new').length} critical complaint{complaints.filter(c => c.severity === 'critical' && c.state === 'new').length !== 1 ? 's' : ''} awaiting assignment
+            {criticalNewCount} critical complaint{criticalNewCount !== 1 ? 's' : ''} awaiting assignment
           </span>
         </div>
       )}

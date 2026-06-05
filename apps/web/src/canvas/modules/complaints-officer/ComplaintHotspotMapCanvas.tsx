@@ -1,6 +1,8 @@
 // ComplaintHotspotMapCanvas — Complaints Officer
 // Pseudo-map of Gujarat rendered as CSS rectangles per district.
-// Hotspot clusters from /api/complaints/hotspots. Hover/click district → side panel.
+// Hotspots from /api/complaints/hotspots which returns:
+//   [{lat, lng, count, severity, sampleIds, districtId}]
+// We group by districtId (or approximate by lat/lng bucket) and show heat.
 
 import { useEffect, useState, useCallback } from 'react'
 import { MapPin, X, RefreshCw, AlertTriangle, Eye } from 'lucide-react'
@@ -8,47 +10,42 @@ import { api } from '../../../lib/api.js'
 import { useAuth } from '../../../context/AuthContext.js'
 import { useApp } from '../../../context/AppContext.js'
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Real API shape ───────────────────────────────────────────────────────────
 
-interface HotspotComplaint {
-  id: string
-  category: string
-  severity: string
-  description: string
-  receivedAt: string
+interface HotspotPoint {
+  lat: number
+  lng: number
+  count: number
+  severity: string   // 'MINOR' | 'MAJOR' | 'CRITICAL'
+  sampleIds: string[]
+  districtId: string | null
 }
+
+// ─── Internal display shape ───────────────────────────────────────────────────
 
 interface DistrictHotspot {
   district: string
   count: number
   critical: number
-  topCategory: string
-  complaints: HotspotComplaint[]
-}
-
-interface HotspotsResponse {
-  hotspots: DistrictHotspot[]
+  topSeverity: string
 }
 
 // ─── Gujarat district layout (simplified grid map) ────────────────────────────
-// x / y in grid units (each = 48px). Gujarat shape approximated in a 10×10 grid.
 
 interface DistrictCell {
   name: string
-  col: number  // 1-indexed
+  col: number
   row: number
-  w?: number   // colspan
-  h?: number   // rowspan
+  w?: number
+  h?: number
 }
 
 const GUJARAT_GRID: DistrictCell[] = [
-  // North
   { name: 'Banaskantha',  col: 2, row: 1, w: 2 },
   { name: 'Patan',        col: 4, row: 1 },
   { name: 'Mehsana',      col: 5, row: 1 },
   { name: 'Sabarkantha',  col: 6, row: 1 },
   { name: 'Aravalli',     col: 7, row: 1 },
-  // Second row
   { name: 'Kutch',        col: 1, row: 2, w: 2, h: 3 },
   { name: 'Morbi',        col: 3, row: 2 },
   { name: 'Surendranagar',col: 4, row: 2 },
@@ -56,26 +53,22 @@ const GUJARAT_GRID: DistrictCell[] = [
   { name: 'Ahmedabad',    col: 6, row: 2 },
   { name: 'Kheda',        col: 7, row: 2 },
   { name: 'Anand',        col: 8, row: 2 },
-  // Third row
   { name: 'Devbhumi Dwarka', col: 3, row: 3 },
   { name: 'Jamnagar',     col: 4, row: 3 },
   { name: 'Rajkot',       col: 5, row: 3 },
   { name: 'Botad',        col: 6, row: 3 },
   { name: 'Vadodara',     col: 7, row: 3 },
   { name: 'Chhota Udaipur', col: 8, row: 3 },
-  // Fourth row
   { name: 'Porbandar',    col: 3, row: 4 },
   { name: 'Junagadh',     col: 4, row: 4 },
   { name: 'Amreli',       col: 5, row: 4 },
   { name: 'Bhavnagar',    col: 6, row: 4 },
   { name: 'Narmada',      col: 7, row: 4 },
   { name: 'Bharuch',      col: 8, row: 4 },
-  // Fifth row
   { name: 'Gir Somnath',  col: 4, row: 5 },
   { name: 'Dang',         col: 6, row: 5 },
   { name: 'Tapi',         col: 7, row: 5 },
   { name: 'Surat',        col: 8, row: 5 },
-  // Sixth row
   { name: 'Navsari',      col: 8, row: 6 },
   { name: 'Valsad',       col: 8, row: 7 },
 ]
@@ -84,51 +77,43 @@ const CELL_PX = 48
 const GRID_COLS = 9
 const GRID_ROWS = 8
 
-// ─── Demo data ────────────────────────────────────────────────────────────────
-
-const DEMO_HOTSPOTS: DistrictHotspot[] = [
-  {
-    district: 'Ahmedabad', count: 87, critical: 12, topCategory: 'Air Pollution',
-    complaints: [
-      { id: 'C-001', category: 'Air Pollution', severity: 'critical', description: 'Black smoke from GIDC Vatva', receivedAt: new Date(Date.now() - 3600_000).toISOString() },
-      { id: 'C-007', category: 'Hazardous Waste', severity: 'high', description: 'Open chemical drums at Naroda', receivedAt: new Date(Date.now() - 86400_000).toISOString() },
-    ],
-  },
-  {
-    district: 'Surat', count: 54, critical: 6, topCategory: 'Water Pollution',
-    complaints: [
-      { id: 'C-002', category: 'Water Pollution', severity: 'critical', description: 'Dye effluent in drain at Sachin GIDC', receivedAt: new Date(Date.now() - 7200_000).toISOString() },
-    ],
-  },
-  {
-    district: 'Bharuch', count: 42, critical: 8, topCategory: 'Hazardous Waste',
-    complaints: [
-      { id: 'C-003', category: 'Hazardous Waste', severity: 'medium', description: 'Waste drums at Ankleshwar GIDC', receivedAt: new Date(Date.now() - 86400_000).toISOString() },
-    ],
-  },
-  {
-    district: 'Valsad', count: 31, critical: 3, topCategory: 'Air Pollution',
-    complaints: [
-      { id: 'C-004', category: 'Air Pollution', severity: 'high', description: 'Stack emissions at Vapi industrial estate', receivedAt: new Date(Date.now() - 172_800_000).toISOString() },
-    ],
-  },
-  {
-    district: 'Rajkot', count: 28, critical: 2, topCategory: 'Noise',
-    complaints: [
-      { id: 'C-005', category: 'Noise', severity: 'medium', description: 'Compressor noise at ceramic unit', receivedAt: new Date(Date.now() - 259_200_000).toISOString() },
-    ],
-  },
-  {
-    district: 'Vadodara', count: 22, critical: 1, topCategory: 'Water Pollution',
-    complaints: [],
-  },
-  {
-    district: 'Kutch', count: 15, critical: 0, topCategory: 'Noise',
-    complaints: [],
-  },
-]
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Very rough lat/lng → district guess for Gujarat.
+ * Since API doesn't return district names, we use this as a best-effort.
+ */
+function guessDistrict(lat: number, lng: number): string {
+  if (lat > 23.5) {
+    if (lng < 71) return 'Kutch'
+    if (lng < 72.5) return 'Banaskantha'
+    if (lng < 73) return 'Mehsana'
+    return 'Sabarkantha'
+  }
+  if (lat > 22.5) {
+    if (lng < 70.5) return 'Kutch'
+    if (lng < 71.5) return 'Jamnagar'
+    if (lng < 72.5) return 'Surendranagar'
+    if (lng < 73) return 'Ahmedabad'
+    return 'Anand'
+  }
+  if (lat > 21.8) {
+    if (lng < 71) return 'Porbandar'
+    if (lng < 71.8) return 'Junagadh'
+    if (lng < 72.3) return 'Amreli'
+    if (lng < 72.8) return 'Bhavnagar'
+    if (lng < 73.3) return 'Vadodara'
+    return 'Bharuch'
+  }
+  if (lat > 21.2) {
+    if (lng < 72.5) return 'Gir Somnath'
+    if (lng < 73) return 'Surat'
+    return 'Bharuch'
+  }
+  if (lng < 72.8) return 'Surat'
+  if (lng < 73.2) return 'Navsari'
+  return 'Valsad'
+}
 
 function getIntensity(count: number, maxCount: number): string {
   const ratio = maxCount === 0 ? 0 : count / maxCount
@@ -139,20 +124,16 @@ function getIntensity(count: number, maxCount: number): string {
   return 'bg-surface-secondary text-txt-tertiary'
 }
 
-function fmt(iso: string) {
-  return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
-}
-
 // ─── Side panel ───────────────────────────────────────────────────────────────
 
 function DistrictPanel({ hotspot, onClose }: { hotspot: DistrictHotspot; onClose: () => void }) {
   return (
-    <div className="w-[260px] flex-shrink-0 bg-white border-l border-bdr-light flex flex-col animate-bubble-in">
+    <div className="w-[240px] flex-shrink-0 bg-white border-l border-bdr-light flex flex-col animate-bubble-in">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-bdr-light">
         <MapPin className="w-4 h-4 text-primary" />
         <div className="flex-1">
           <div className="text-[14px] font-bold text-txt-primary">{hotspot.district}</div>
-          <div className="text-[11px] text-txt-secondary">{hotspot.count} complaints</div>
+          <div className="text-[11px] text-txt-secondary">{hotspot.count} complaint cluster{hotspot.count !== 1 ? 's' : ''}</div>
         </div>
         <button onClick={onClose} className="w-7 h-7 rounded-lg hover:bg-surface-secondary flex items-center justify-center">
           <X className="w-4 h-4 text-txt-tertiary" />
@@ -161,34 +142,18 @@ function DistrictPanel({ hotspot, onClose }: { hotspot: DistrictHotspot; onClose
 
       <div className="px-4 py-3 border-b border-bdr-light space-y-1.5">
         <div className="flex justify-between text-[12px]">
-          <span className="text-txt-secondary">Critical</span>
+          <span className="text-txt-secondary">Critical clusters</span>
           <span className="font-bold text-danger">{hotspot.critical}</span>
         </div>
         <div className="flex justify-between text-[12px]">
-          <span className="text-txt-secondary">Top category</span>
-          <span className="font-semibold text-txt-primary">{hotspot.topCategory}</span>
+          <span className="text-txt-secondary">Top severity</span>
+          <span className="font-semibold text-txt-primary">{hotspot.topSeverity}</span>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
-        <div className="text-[10px] font-bold uppercase tracking-widest text-txt-tertiary mb-2">Recent complaints</div>
-        {hotspot.complaints.length === 0 && (
-          <div className="text-[12px] text-txt-tertiary">No details available.</div>
-        )}
-        {hotspot.complaints.map(c => (
-          <div key={c.id} className="bg-surface-secondary rounded-xl p-3">
-            <div className="flex items-center gap-1 mb-1">
-              <span className="text-[10px] font-bold text-txt-tertiary">{c.id}</span>
-              <span className="text-[10px] text-txt-tertiary">·</span>
-              <span className="text-[10px] text-txt-secondary">{c.category}</span>
-              <span className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full ${c.severity === 'critical' ? 'bg-danger text-white' : c.severity === 'high' ? 'bg-orange-100 text-orange-700' : 'bg-warn-light text-yellow-800'}`}>
-                {c.severity}
-              </span>
-            </div>
-            <div className="text-[11px] text-txt-primary line-clamp-2">{c.description}</div>
-            <div className="text-[10px] text-txt-tertiary mt-1">{fmt(c.receivedAt)}</div>
-          </div>
-        ))}
+      <div className="flex-1 px-4 py-3 text-[12px] text-txt-tertiary">
+        Cluster data based on geolocation grouping.
+        Open the Complaint Inbox for full complaint details.
       </div>
     </div>
   )
@@ -205,15 +170,40 @@ export function ComplaintHotspotMapCanvas() {
   const [hovered, setHovered] = useState<string | null>(null)
 
   const load = useCallback(async () => {
+    if (!token) return
     setLoading(true)
     try {
-      const res = await api<HotspotsResponse>('/api/complaints/hotspots', {
-        token: token ?? undefined,
-      })
-      setHotspots(res.hotspots ?? [])
+      const res = await api<HotspotPoint[] | { hotspots?: HotspotPoint[] }>(
+        '/api/complaints/hotspots',
+        { token },
+      )
+      const raw: HotspotPoint[] = Array.isArray(res)
+        ? (res as HotspotPoint[])
+        : ((res as { hotspots?: HotspotPoint[] }).hotspots ?? [])
+
+      // Group by approximate district
+      const grouped = new Map<string, { count: number; critical: number; severities: string[] }>()
+      for (const pt of raw) {
+        const districtName = guessDistrict(pt.lat, pt.lng)
+        const existing = grouped.get(districtName) ?? { count: 0, critical: 0, severities: [] }
+        existing.count += pt.count
+        if (pt.severity === 'CRITICAL') existing.critical += pt.count
+        existing.severities.push(pt.severity)
+        grouped.set(districtName, existing)
+      }
+
+      const result: DistrictHotspot[] = Array.from(grouped.entries()).map(([district, g]) => ({
+        district,
+        count: g.count,
+        critical: g.critical,
+        topSeverity: g.severities.includes('CRITICAL') ? 'CRITICAL'
+          : g.severities.includes('MAJOR') ? 'MAJOR'
+          : 'MINOR',
+      }))
+      setHotspots(result.sort((a, b) => b.count - a.count))
     } catch {
-      showToast({ kind: 'warn', text: 'Using demo data — API not reachable.' })
-      setHotspots(DEMO_HOTSPOTS)
+      showToast({ kind: 'danger', text: 'Failed to load hotspot data.' })
+      setHotspots([])
     } finally {
       setLoading(false)
     }
@@ -233,7 +223,7 @@ export function ComplaintHotspotMapCanvas() {
         </div>
         <div className="flex-1">
           <div className="text-[15px] font-bold text-txt-primary">Complaint Hotspot Map</div>
-          <div className="text-[11px] text-txt-secondary">Gujarat districts · click a district to view complaints</div>
+          <div className="text-[11px] text-txt-secondary">Gujarat districts · geolocation-clustered complaints</div>
         </div>
         <button
           onClick={() => { void load() }}
@@ -272,81 +262,84 @@ export function ComplaintHotspotMapCanvas() {
                 ))}
               </div>
 
-              {/* Grid map */}
-              <div
-                className="relative bg-white rounded-card border border-bdr-light shadow-card overflow-hidden"
-                style={{
-                  width: GRID_COLS * CELL_PX + 2,
-                  height: GRID_ROWS * CELL_PX + 2,
-                  minWidth: GRID_COLS * CELL_PX + 2,
-                }}
-              >
-                {/* Sea background */}
-                <div className="absolute inset-0 bg-blue-50" />
+              {hotspots.length === 0 ? (
+                <div className="text-center py-16 text-txt-tertiary text-[13px]">No hotspot data available.</div>
+              ) : (
+                <>
+                  {/* Grid map */}
+                  <div
+                    className="relative bg-white rounded-card border border-bdr-light shadow-card overflow-hidden"
+                    style={{
+                      width: GRID_COLS * CELL_PX + 2,
+                      height: GRID_ROWS * CELL_PX + 2,
+                      minWidth: GRID_COLS * CELL_PX + 2,
+                    }}
+                  >
+                    <div className="absolute inset-0 bg-blue-50" />
 
-                {GUJARAT_GRID.map(cell => {
-                  const h = hotspotMap.get(cell.name)
-                  const intensity = h ? getIntensity(h.count, maxCount) : 'bg-slate-100 text-txt-tertiary'
-                  const isSelected = selected?.district === cell.name
-                  const isHovered = hovered === cell.name
+                    {GUJARAT_GRID.map(cell => {
+                      const h = hotspotMap.get(cell.name)
+                      const intensity = h ? getIntensity(h.count, maxCount) : 'bg-slate-100 text-txt-tertiary'
+                      const isSelected = selected?.district === cell.name
+                      const isHovered = hovered === cell.name
 
-                  return (
-                    <button
-                      key={cell.name}
-                      onClick={() => setSelected(h ?? null)}
-                      onMouseEnter={() => setHovered(cell.name)}
-                      onMouseLeave={() => setHovered(null)}
-                      title={h ? `${cell.name}: ${h.count} complaints` : cell.name}
-                      style={{
-                        position: 'absolute',
-                        left: (cell.col - 1) * CELL_PX + 1,
-                        top: (cell.row - 1) * CELL_PX + 1,
-                        width: (cell.w ?? 1) * CELL_PX - 2,
-                        height: (cell.h ?? 1) * CELL_PX - 2,
-                      }}
-                      className={`
-                        flex flex-col items-center justify-center border rounded-lg text-center transition-all
-                        ${intensity}
-                        ${isSelected ? 'ring-2 ring-primary ring-offset-1 z-10' : ''}
-                        ${isHovered && !isSelected ? 'brightness-90 z-10 shadow-md' : ''}
-                        ${h ? 'cursor-pointer' : 'cursor-default'}
-                      `}
-                    >
-                      <div className="text-[8px] font-bold leading-tight px-0.5 truncate w-full text-center">
-                        {cell.name}
-                      </div>
-                      {h && (
-                        <div className="text-[9px] font-bold mt-0.5">{h.count}</div>
-                      )}
-                      {h && h.critical > 0 && (
-                        <AlertTriangle className="w-2.5 h-2.5 mt-0.5 opacity-80" />
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-
-              {/* District list below map for districts not in grid */}
-              {hotspots.length > 0 && (
-                <div className="mt-4">
-                  <div className="text-[11px] font-bold uppercase tracking-widest text-txt-tertiary mb-2">Top Hotspots</div>
-                  <div className="flex flex-wrap gap-2">
-                    {[...hotspots].sort((a, b) => b.count - a.count).slice(0, 8).map(h => (
-                      <button
-                        key={h.district}
-                        onClick={() => setSelected(h)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold border transition-all ${
-                          selected?.district === h.district
-                            ? 'bg-primary text-white border-primary'
-                            : 'bg-white text-txt-primary border-bdr hover:border-primary'
-                        }`}
-                      >
-                        <Eye className="w-3 h-3" />
-                        {h.district} <span className="opacity-70">({h.count})</span>
-                      </button>
-                    ))}
+                      return (
+                        <button
+                          key={cell.name}
+                          onClick={() => setSelected(h ?? null)}
+                          onMouseEnter={() => setHovered(cell.name)}
+                          onMouseLeave={() => setHovered(null)}
+                          title={h ? `${cell.name}: ${h.count} clusters` : cell.name}
+                          style={{
+                            position: 'absolute',
+                            left: (cell.col - 1) * CELL_PX + 1,
+                            top: (cell.row - 1) * CELL_PX + 1,
+                            width: (cell.w ?? 1) * CELL_PX - 2,
+                            height: (cell.h ?? 1) * CELL_PX - 2,
+                          }}
+                          className={`
+                            flex flex-col items-center justify-center border rounded-lg text-center transition-all
+                            ${intensity}
+                            ${isSelected ? 'ring-2 ring-primary ring-offset-1 z-10' : ''}
+                            ${isHovered && !isSelected ? 'brightness-90 z-10 shadow-md' : ''}
+                            ${h ? 'cursor-pointer' : 'cursor-default'}
+                          `}
+                        >
+                          <div className="text-[8px] font-bold leading-tight px-0.5 truncate w-full text-center">
+                            {cell.name}
+                          </div>
+                          {h && (
+                            <div className="text-[9px] font-bold mt-0.5">{h.count}</div>
+                          )}
+                          {h && h.critical > 0 && (
+                            <AlertTriangle className="w-2.5 h-2.5 mt-0.5 opacity-80" />
+                          )}
+                        </button>
+                      )
+                    })}
                   </div>
-                </div>
+
+                  {/* Top hotspots list */}
+                  <div className="mt-4">
+                    <div className="text-[11px] font-bold uppercase tracking-widest text-txt-tertiary mb-2">Top Hotspots</div>
+                    <div className="flex flex-wrap gap-2">
+                      {hotspots.slice(0, 8).map(h => (
+                        <button
+                          key={h.district}
+                          onClick={() => setSelected(h)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold border transition-all ${
+                            selected?.district === h.district
+                              ? 'bg-primary text-white border-primary'
+                              : 'bg-white text-txt-primary border-bdr hover:border-primary'
+                          }`}
+                        >
+                          <Eye className="w-3 h-3" />
+                          {h.district} <span className="opacity-70">({h.count})</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
               )}
             </>
           )}
