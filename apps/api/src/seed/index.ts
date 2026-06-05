@@ -8,6 +8,7 @@ import { seedComplaints } from './complaints.js'
 import { seedSensors } from './sensors.js'
 import { seedCetps } from './cetps.js'
 import { seedKnowledge } from './knowledge.js'
+import { seedEnforcementActions } from './enforcement.js'
 import { logger } from '../logger.js'
 
 async function main() {
@@ -79,6 +80,14 @@ async function main() {
     prisma.knowledgeChunk.count(),
   ])
   logger.info(`knowledge done: ${docCount} documents, ${chunkCount} chunks seeded`)
+
+  logger.info('seeding enforcement actions + audit log history…')
+  await seedEnforcementActions(prisma)
+  const [enforcementCount, auditCount] = await Promise.all([
+    prisma.enforcementAction.count(),
+    prisma.auditLog.count(),
+  ])
+  logger.info(`enforcement done: ${enforcementCount} enforcement actions, ${auditCount} total audit log entries seeded`)
 
   await prisma.$disconnect()
 }
