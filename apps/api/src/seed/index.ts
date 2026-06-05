@@ -6,6 +6,7 @@ import { seedConsents } from './consents.js'
 import { seedInspections } from './inspections.js'
 import { seedComplaints } from './complaints.js'
 import { seedSensors } from './sensors.js'
+import { seedKnowledge } from './knowledge.js'
 import { logger } from '../logger.js'
 
 async function main() {
@@ -61,6 +62,14 @@ async function main() {
     `sensors done: ${stationCount} stations, ${readingCount} readings, ` +
     `${exceedanceCount} exceedances seeded`
   )
+
+  logger.info('seeding knowledge documents + RAG chunks…')
+  await seedKnowledge(prisma)
+  const [docCount, chunkCount] = await Promise.all([
+    prisma.knowledgeDocument.count(),
+    prisma.knowledgeChunk.count(),
+  ])
+  logger.info(`knowledge done: ${docCount} documents, ${chunkCount} chunks seeded`)
 
   await prisma.$disconnect()
 }
