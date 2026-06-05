@@ -14,7 +14,8 @@
     "prisma:generate": "dotenv -e ../../.env -- prisma generate",
     "prisma:migrate": "dotenv -e ../../.env -- prisma migrate dev",
     "prisma:reset": "dotenv -e ../../.env -- prisma migrate reset --force",
-    "rag:ingest": "dotenv -e ../../.env -- tsx src/rag/ingest.ts"
+    "rag:ingest": "dotenv -e ../../.env -- tsx src/rag/ingest.ts",
+    "rag:ingest-pdfs": "dotenv -e ../../.env -- tsx src/rag/ingest-pdfs.ts"
   },
   "dependencies": {
     "@gpcsk/shared": "workspace:*",
@@ -24,12 +25,14 @@
     "cors": "2.8.5",
     "express": "4.21.1",
     "jsonwebtoken": "9.0.2",
+    "pdf-parse": "^1.1.1",
     "pino": "9.5.0",
     "pino-http": "10.3.0",
     "zod": "3.23.8"
   },
   "devDependencies": {
     "@types/bcryptjs": "2.4.6",
+    "@types/pdf-parse": "^1.1.4",
     "@types/cors": "2.8.17",
     "@types/express": "4.17.21",
     "@types/jsonwebtoken": "9.0.7",
