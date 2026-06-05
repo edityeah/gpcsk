@@ -9,6 +9,7 @@ import { seedSensors } from './sensors.js'
 import { seedCetps } from './cetps.js'
 import { seedKnowledge } from './knowledge.js'
 import { seedEnforcementActions } from './enforcement.js'
+import { seedNotifications } from './notifications.js'
 import { logger } from '../logger.js'
 
 async function main() {
@@ -88,6 +89,11 @@ async function main() {
     prisma.auditLog.count(),
   ])
   logger.info(`enforcement done: ${enforcementCount} enforcement actions, ${auditCount} total audit log entries seeded`)
+
+  logger.info('seeding notifications…')
+  await seedNotifications(prisma)
+  const notifCount = await prisma.notification.count()
+  logger.info(`notifications done: ${notifCount} notifications seeded`)
 
   await prisma.$disconnect()
 }

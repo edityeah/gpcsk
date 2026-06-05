@@ -1,8 +1,9 @@
 /**
  * Notifications router
  *
- * GET   /api/notifications          – list notifications for authenticated user (desc by createdAt)
- * PATCH /api/notifications/:id/read – mark a notification as read
+ * GET   /api/notifications              – list notifications for authenticated user (desc by createdAt)
+ * GET   /api/notifications/unread-count – count of unread notifications for current user
+ * PATCH /api/notifications/:id/read     – mark a notification as read
  */
 
 import { Router } from 'express'
@@ -53,6 +54,16 @@ notificationsRouter.get('/', requireAuth, async (req, res) => {
   }
 
   res.json({ notifications, nextCursor })
+})
+
+// ── GET /api/notifications/unread-count ───────────────────────────────────
+
+notificationsRouter.get('/unread-count', requireAuth, async (req, res) => {
+  const userId = req.auth!.sub
+  const count = await prisma.notification.count({
+    where: { userId, readAt: null },
+  })
+  res.json({ count })
 })
 
 // ── PATCH /api/notifications/:id/read ─────────────────────────────────────

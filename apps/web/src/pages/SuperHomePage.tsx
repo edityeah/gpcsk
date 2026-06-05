@@ -11,7 +11,7 @@
  *  └──────────────────────┴──────────────────────────────────────────────┘
  */
 
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, useCallback, type FormEvent } from 'react'
 import * as Lucide from 'lucide-react'
 import type { ComponentType } from 'react'
 import {
@@ -32,6 +32,7 @@ import {
 import { Suspense } from 'react'
 import { useApp } from '../context/AppContext.js'
 import { useAuth } from '../context/AuthContext.js'
+import { api } from '../lib/api.js'
 import { ChatProvider, useChat } from '../context/ChatContext.js'
 import { ChatBubble, TypingDots } from '../components/ChatBubble.js'
 import GpcbLogo from '../components/GpcbLogo.js'
@@ -430,7 +431,22 @@ function SaathiQuickButton() {
 
 function BellButton() {
   const { openCanvas } = useChat()
-  // No notifications context in GPCSK yet — show 0 unread
+  const { token } = useAuth()
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  const fetchCount = useCallback(() => {
+    if (!token) return
+    api<{ count: number }>('/api/notifications/unread-count', { token })
+      .then(r => setUnreadCount(r.count))
+      .catch(() => {/* silent */})
+  }, [token])
+
+  useEffect(() => {
+    fetchCount()
+    const interval = setInterval(fetchCount, 60_000)
+    return () => clearInterval(interval)
+  }, [fetchCount])
+
   return (
     <button
       type="button"
@@ -438,6 +454,11 @@ function BellButton() {
       className="relative w-10 h-10 rounded-full hover:bg-surface-page border border-bdr-light flex items-center justify-center transition"
     >
       <Bell className="w-[18px] h-[18px] text-txt-secondary" />
+      {unreadCount > 0 && (
+        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none">
+          {unreadCount > 99 ? '99+' : unreadCount}
+        </span>
+      )}
     </button>
   )
 }
