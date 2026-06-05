@@ -65,6 +65,118 @@ sensorsRouter.get('/stations', requireAuth, async (req, res) => {
   res.json({ stations })
 })
 
+// ── GET /api/sensors/stations/latest ──────────────────────────────────────
+// Batch — every (station, parameter) with its latest reading + matching norm.
+// Powers OCEMS / CEQMS / AAQM live-grid canvases without per-station N+1.
+
+const LatestQuerySchema = z.object({
+  type:   z.enum(['OCEMS','CEQMS','AAQM','MINARS','GEMS','VOC']).optional(),
+  status: z.string().optional(),
+})
+
+const NORM_STREAM_BY_TYPE: Record<string, string> = {
+  OCEMS: 'WATER', CEQMS: 'WATER', MINARS: 'WATER', GEMS: 'WATER',
+  AAQM: 'AIR', VOC: 'AIR',
+}
+
+interface LatestRow {
+  station_id: string; station_name: string; station_status: string; station_type: string;
+  industry_id: string | null; industry_name: string | null; district_name: string | null;
+  parameter: string; value: number; unit: string; timestamp: Date; validity: string;
+}
+
+sensorsRouter.get('/stations/latest', requireAuth, async (req, res) => {
+  const parsed = LatestQuerySchema.safeParse(req.query)
+  if (!parsed.success) {
+    res.status(400).json({ error: 'invalid_query', details: parsed.error.flatten() })
+    return
+  }
+  const { type, status } = parsed.data
+
+  const typeFilter = type ?? null
+  const statusFilter = status ?? null
+
+  const rows = await prisma.$queryRaw<LatestRow[]>`
+    SELECT
+      s.id   AS station_id,
+      s.name AS station_name,
+      s.status AS station_status,
+      s.type::text AS station_type,
+      i.id   AS industry_id,
+      i.name AS industry_name,
+      d.name AS district_name,
+      r.parameter, r.value, r.unit, r.timestamp, r.validity::text AS validity
+    FROM "MonitoringStation" s
+    LEFT JOIN "Industry" i ON s."industryId" = i.id
+    LEFT JOIN "District" d ON i."districtId" = d.id
+    INNER JOIN LATERAL (
+      SELECT DISTINCT ON (parameter)
+        parameter, value, unit, timestamp, validity
+      FROM "SensorReading"
+      WHERE "stationId" = s.id
+      ORDER BY parameter, timestamp DESC
+    ) r ON TRUE
+    WHERE (${typeFilter}::text IS NULL OR s.type::text = ${typeFilter}::text)
+      AND (${statusFilter}::text IS NULL OR s.status = ${statusFilter}::text)
+    ORDER BY s.name, r.parameter
+  `
+
+  const norms = await prisma.norm.findMany({
+    select: { parameter: true, stream: true, value: true, unit: true },
+  })
+  const normByKey = new Map<string, { value: number; unit: string }>()
+  for (const n of norms) {
+    const key = `${n.stream}|${n.parameter}`
+    if (!normByKey.has(key)) normByKey.set(key, { value: n.value, unit: n.unit })
+  }
+
+  const byStation = new Map<string, {
+    id: string; name: string; status: string; type: string;
+    industry: { id: string; name: string } | null;
+    district: string | null;
+    readings: Array<{ parameter: string; value: number; unit: string; norm: number | null; normUnit: string | null; timestamp: string; validity: string }>;
+  }>()
+  for (const row of rows) {
+    if (!byStation.has(row.station_id)) {
+      byStation.set(row.station_id, {
+        id: row.station_id, name: row.station_name, status: row.station_status, type: row.station_type,
+        industry: row.industry_id && row.industry_name ? { id: row.industry_id, name: row.industry_name } : null,
+        district: row.district_name,
+        readings: [],
+      })
+    }
+    const stream = NORM_STREAM_BY_TYPE[row.station_type]
+    const normLookup = stream ? normByKey.get(`${stream}|${row.parameter}`) : undefined
+    byStation.get(row.station_id)!.readings.push({
+      parameter: row.parameter,
+      value: row.value,
+      unit: row.unit,
+      norm: normLookup?.value ?? null,
+      normUnit: normLookup?.unit ?? null,
+      timestamp: row.timestamp.toISOString(),
+      validity: row.validity,
+    })
+  }
+
+  // Include stations that have no readings (down / calibration / freshly installed).
+  const allStations = await prisma.monitoringStation.findMany({
+    where: { ...(type ? { type } : {}), ...(status ? { status } : {}) },
+    select: { id: true, name: true, status: true, type: true, industry: { select: { id: true, name: true, district: { select: { name: true } } } } },
+  })
+  for (const s of allStations) {
+    if (!byStation.has(s.id)) {
+      byStation.set(s.id, {
+        id: s.id, name: s.name, status: s.status, type: s.type,
+        industry: s.industry ? { id: s.industry.id, name: s.industry.name } : null,
+        district: s.industry?.district?.name ?? null,
+        readings: [],
+      })
+    }
+  }
+
+  res.json({ stations: Array.from(byStation.values()) })
+})
+
 // ── GET /api/sensors/stations/:id ─────────────────────────────────────────
 
 sensorsRouter.get('/stations/:id', requireAuth, async (req, res) => {
