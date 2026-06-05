@@ -259,6 +259,159 @@ sensorsRouter.get('/stations/:id', requireAuth, async (req, res) => {
   })
 })
 
+// ── GET /api/sensors/stations/:id/health ──────────────────────────────────
+//
+// Returns station health including outage history (last 30d) computed from
+// SensorReading timestamp gaps >2h, and auto-creates INSPECTION_DUE
+// notification for IEO if criteria met (idempotent).
+//
+// Response:
+//   { stationId, status, lastReadingAt, hoursSinceLastReading,
+//     last30dOutages: [{ start, end, durationHours }],
+//     outageCount30d, totalOfflineHours30d, autoInspectionTriggered }
+
+sensorsRouter.get('/stations/:id/health', requireAuth, async (req, res) => {
+  const { id } = req.params
+
+  const station = await prisma.monitoringStation.findUnique({
+    where: { id },
+    include: { industry: { select: { id: true, name: true } } },
+  })
+  if (!station) {
+    res.status(404).json({ error: 'station_not_found' })
+    return
+  }
+
+  const now = new Date()
+  const since30d = new Date(now.getTime() - 30 * 24 * 3_600_000)
+
+  // Pull all reading timestamps in the last 30 days ordered ASC
+  const rawReadings = await prisma.$queryRaw<Array<{ ts: Date }>>`
+    SELECT timestamp AS ts
+    FROM   "SensorReading"
+    WHERE  "stationId" = ${id}
+      AND  timestamp   >= ${since30d}
+    ORDER  BY timestamp ASC
+  `
+
+  const timestamps: Date[] = rawReadings.map(r => new Date(r.ts))
+
+  // Outage = gap > 2h between consecutive readings
+  const TWO_HOURS_MS = 2 * 3_600_000
+
+  interface Outage { start: Date; end: Date; durationHours: number }
+  const outages: Outage[] = []
+
+  for (let i = 1; i < timestamps.length; i++) {
+    const gap = timestamps[i]!.getTime() - timestamps[i - 1]!.getTime()
+    if (gap > TWO_HOURS_MS) {
+      const durationHours = Math.round((gap / 3_600_000) * 10) / 10
+      outages.push({ start: timestamps[i - 1]!, end: timestamps[i]!, durationHours })
+    }
+  }
+
+  // Last reading timestamp
+  const lastReadingAt = timestamps.length > 0 ? timestamps[timestamps.length - 1]! : null
+  const hoursSinceLastReading = lastReadingAt
+    ? Math.round((now.getTime() - lastReadingAt.getTime()) / 3_600_000 * 10) / 10
+    : null
+
+  // Open outage: station 'active' but last reading >2h ago
+  if (
+    station.status === 'active' &&
+    lastReadingAt &&
+    hoursSinceLastReading != null &&
+    hoursSinceLastReading >= 2
+  ) {
+    outages.push({
+      start: lastReadingAt,
+      end: now,
+      durationHours: Math.round(hoursSinceLastReading * 10) / 10,
+    })
+  }
+
+  const outageCount30d = outages.length
+  const totalOfflineHours30d = Math.round(
+    outages.reduce((s, o) => s + o.durationHours, 0) * 10,
+  ) / 10
+
+  // ── Auto-inspection trigger ────────────────────────────────────────────────
+  const shouldTrigger =
+    outageCount30d >= 3 || (hoursSinceLastReading != null && hoursSinceLastReading >= 24)
+
+  let autoInspectionTriggered = false
+
+  if (shouldTrigger) {
+    // Idempotency: check for existing INSPECTION_DUE notification in last 7 days
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 3_600_000)
+    const ieoUser = await prisma.user.findFirst({
+      where: { role: 'INSPECTION_ENFORCEMENT_OFFICER' },
+      select: { id: true },
+    })
+
+    if (ieoUser) {
+      const existing = await prisma.notification.findFirst({
+        where: {
+          userId: ieoUser.id,
+          category: 'INSPECTION_DUE',
+          createdAt: { gte: sevenDaysAgo },
+          payload: {
+            path: ['stationId'],
+            equals: id,
+          },
+        },
+      })
+
+      if (!existing) {
+        const reason =
+          hoursSinceLastReading != null && hoursSinceLastReading >= 24
+            ? `OCEMS offline for ${Math.round(hoursSinceLastReading)}h`
+            : 'Frequent OCEMS signal disruption'
+
+        await prisma.notification.create({
+          data: {
+            userId: ieoUser.id,
+            category: 'INSPECTION_DUE',
+            priority: hoursSinceLastReading != null && hoursSinceLastReading >= 24 ? 'HIGH' : 'MEDIUM',
+            payload: {
+              title: `Auto-inspection triggered: ${station.name}`,
+              body: `${reason} — ${outageCount30d} outages in last 30d. Field verification required.`,
+              stationId: id,
+              stationName: station.name,
+              industryId: station.industry?.id ?? null,
+              industryName: station.industry?.name ?? null,
+              reason,
+              outageCount30d,
+              hoursSinceLastReading,
+              actionCanvas: 'OPEN_INSPECTION_SCHEDULER',
+            },
+          },
+        })
+        autoInspectionTriggered = true
+      } else {
+        // Notification already exists → still consider it triggered
+        autoInspectionTriggered = true
+      }
+    }
+  }
+
+  res.json({
+    stationId: id,
+    stationName: station.name,
+    status: station.status,
+    lastReadingAt: lastReadingAt?.toISOString() ?? null,
+    hoursSinceLastReading,
+    last30dOutages: outages.map(o => ({
+      start: o.start.toISOString(),
+      end: o.end.toISOString(),
+      durationHours: o.durationHours,
+    })),
+    outageCount30d,
+    totalOfflineHours30d,
+    autoInspectionTriggered,
+  })
+})
+
 // ── GET /api/sensors/readings ──────────────────────────────────────────────
 
 const ReadingsQuerySchema = z.object({
