@@ -12,6 +12,8 @@ import { industriesRouter } from './industries/router.js'
 import { consentsRouter } from './consents/router.js'
 import { complaintsRouter } from './complaints/router.js'
 import { statsRouter } from './stats/router.js'
+import { inspectionsRouter } from './inspections/router.js'
+import { enforcementRouter } from './enforcement/router.js'
 
 export function buildApp(): Express {
   const app = express()
@@ -29,6 +31,8 @@ export function buildApp(): Express {
   app.use('/api/consents', consentsRouter)
   app.use('/api/complaints', complaintsRouter)
   app.use('/api/stats', statsRouter)
+  app.use('/api/inspections', inspectionsRouter)
+  app.use('/api/enforcement', enforcementRouter)
 
   return app
 }
