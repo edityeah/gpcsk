@@ -96,7 +96,7 @@ exceedancesRouter.post(
   requireAuth,
   requireRole('MONITORING_OFFICER'),
   async (req, res) => {
-    const { id } = req.params
+    const id = req.params['id']!
     const actorId = req.auth!.sub
 
     const parsed = DispositionBodySchema.safeParse(req.body)
@@ -206,7 +206,6 @@ exceedancesRouter.post(
         entity:   'EnforcementAction',
         entityId: enforcementAction.id,
         action:   'AUTO_DRAFT_CREATED',
-        before:   null,
         after:    {
           trigger: 'exceedance_disposition',
           exceedanceId: id,

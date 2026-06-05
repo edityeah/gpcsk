@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client'
+import { Prisma, type PrismaClient } from '@prisma/client'
 
 // ── Deterministic pseudo-random helpers ───────────────────────────────────
 
@@ -299,7 +299,7 @@ export async function seedConsents(prisma: PrismaClient): Promise<void> {
           validityFrom: validityFrom ?? null,
           validityTo:   validityTo   ?? null,
           state:        state as never,
-          parameters,
+          parameters: parameters as Prisma.InputJsonValue,
           feeStatus,
           makerId,
           checkerId:    needsChecker ? checkerId : null,

@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../db.js'
 import { requireAuth, requireRole } from '../auth/middleware.js'
 import { writeAudit } from '../audit/service.js'
@@ -52,7 +53,7 @@ inspectionsRouter.get('/', requireAuth, async (req, res) => {
 
   const { state, industryId, inspectorId, since, until, limit, cursor } = parsed.data
 
-  const where: Parameters<typeof prisma.inspection.findMany>[0]['where'] = {}
+  const where: Prisma.InspectionWhereInput = {}
   if (state)       where.state       = state
   if (industryId)  where.industryId  = industryId
   if (inspectorId) where.inspectorId = inspectorId
@@ -194,8 +195,8 @@ inspectionsRouter.post(
         data: {
           state: 'COMPLETED',
           completedAt: now,
-          observations: observations as Record<string, unknown>,
-          photos: photos as unknown[],
+          observations: observations as Prisma.InputJsonValue,
+          photos: photos as Prisma.InputJsonValue,
           nextDueAt: nextDueAt ?? null,
         },
       })

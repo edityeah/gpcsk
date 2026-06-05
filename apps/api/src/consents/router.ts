@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../db.js'
 import { requireAuth, requireRole } from '../auth/middleware.js'
 import { writeAudit } from '../audit/service.js'
@@ -27,7 +28,7 @@ consentsRouter.get('/', requireAuth, async (req, res) => {
   }
   const { type, state, expiringWithinDays, industryId, makerId, checkerId, limit, cursor } = parsed.data
 
-  const where: Parameters<typeof prisma.consentApplication.findMany>[0]['where'] = {}
+  const where: Prisma.ConsentApplicationWhereInput = {}
   if (type)       where.type       = type
   if (state)      where.state      = state
   if (industryId) where.industryId = industryId

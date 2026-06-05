@@ -18,6 +18,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import OpenAI from 'openai'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../db.js'
 import { requireAuth } from '../auth/middleware.js'
 import { logger } from '../logger.js'
@@ -204,7 +205,7 @@ aiRouter.post('/message', requireAuth, async (req, res) => {
           threadId,
           role: 'assistant',
           content: `Opening ${actionName}`,
-          toolCalls: [{ name: actionName, args }],
+          toolCalls: [{ name: actionName, args }] as unknown as Prisma.InputJsonValue,
         },
       })
       await prisma.chatThread.update({

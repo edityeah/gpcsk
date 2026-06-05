@@ -140,14 +140,20 @@ describe('GET /api/stats/enforcement-pipeline', () => {
   })
 
   it('byState sums match total enforcement action count', async () => {
+    // Snapshot DB count first, then call API. Use a tolerance window since
+    // other parallel test files may create rows concurrently.
+    const before = await prisma.enforcementAction.count()
     const res = await request(app)
       .get('/api/stats/enforcement-pipeline')
       .set('Authorization', `Bearer ${token}`)
+    const after = await prisma.enforcementAction.count()
 
     const body = res.body as { byState: Array<{ count: number }> }
     const total = body.byState.reduce((s, r) => s + r.count, 0)
-    const dbTotal = await prisma.enforcementAction.count()
-    expect(total).toBe(dbTotal)
+
+    // total must lie within [before, after] inclusive
+    expect(total).toBeGreaterThanOrEqual(before)
+    expect(total).toBeLessThanOrEqual(after)
   })
 })
 

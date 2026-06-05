@@ -7,6 +7,7 @@
 
 import { Router } from 'express'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../db.js'
 import { requireAuth } from '../auth/middleware.js'
 
@@ -33,7 +34,7 @@ notificationsRouter.get('/', requireAuth, async (req, res) => {
   const { unreadOnly, limit, cursor } = parsed.data
   const userId = req.auth!.sub
 
-  const where: Parameters<typeof prisma.notification.findMany>[0]['where'] = {
+  const where: Prisma.NotificationWhereInput = {
     userId,
     ...(unreadOnly ? { readAt: null } : {}),
     ...(cursor ? { id: { lt: cursor } } : {}),

@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../db.js'
 import { requireAuth } from '../auth/middleware.js'
 
@@ -23,7 +24,7 @@ industriesRouter.get('/', requireAuth, async (req, res) => {
   }
   const { districtId, sectorId, category, gidcZoneId, q, limit, cursor } = parsed.data
 
-  const where: Parameters<typeof prisma.industry.findMany>[0]['where'] = {}
+  const where: Prisma.IndustryWhereInput = {}
   if (districtId)  where.districtId  = districtId
   if (sectorId)    where.sectorId    = sectorId
   if (category)    where.category    = category

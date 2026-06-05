@@ -201,13 +201,14 @@ function last12Months(): Date[] {
   return months  // [Jun-2025 … May-2026]
 }
 
-interface ObservedReadings {
+type ObservedReadings = {
   pH: number
   COD: number
   BOD: number
   SS: number
   'NH3-N': number
   'Phenolic Compounds': number
+  [k: string]: number
 }
 
 /** Generates realistic observed-inlet values (slightly over norms is common). */

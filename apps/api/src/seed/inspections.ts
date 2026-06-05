@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client'
+import { Prisma, type PrismaClient, type ViolationSource, type ViolationSeverity, type DispositionState } from '@prisma/client'
 
 // ── Deterministic pseudo-random helper ───────────────────────────────────────
 // Produces a number in [0, 1) from a string seed + integer counter.
@@ -11,7 +11,7 @@ function rng(seed: string, n: number): number {
   return ((h >>> 0) / 0x100000000)
 }
 
-function pick<T>(arr: T[], seed: string, n: number): T {
+function pick<T>(arr: readonly T[], seed: string, n: number): T {
   const r = rng(seed, n)
   return arr[Math.floor(r * arr.length)] as T
 }
@@ -177,8 +177,8 @@ export async function seedInspections(prisma: PrismaClient): Promise<void> {
         completedAt,
         nextDueAt,
         state: 'COMPLETED',
-        observations: obsSet as Record<string, unknown>,
-        photos: [] as unknown[],
+        observations: obsSet as unknown as Prisma.InputJsonValue,
+        photos: [] as unknown as Prisma.InputJsonValue,
       },
     })
   }
@@ -204,7 +204,7 @@ export async function seedInspections(prisma: PrismaClient): Promise<void> {
         nextDueAt: null,
         state: 'SCHEDULED',
         observations: {},
-        photos: [] as unknown[],
+        photos: [] as unknown as Prisma.InputJsonValue,
       },
     })
   }
@@ -273,14 +273,14 @@ export async function seedInspections(prisma: PrismaClient): Promise<void> {
       data: {
         industryId: insp.industryId,
         inspectionId,
-        source,
+        source: source as ViolationSource,
         parameter: paramSpec.parameter,
         observedValue: Math.round(observedValue * 100) / 100,
         normValue: paramSpec.norm,
         unit: paramSpec.unit || null,
-        severity,
+        severity: severity as ViolationSeverity,
         detectedAt,
-        dispositionState: disposition,
+        dispositionState: disposition as DispositionState,
       },
     })
   }

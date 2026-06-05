@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client'
+import { Prisma, type PrismaClient } from '@prisma/client'
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -287,7 +287,7 @@ export async function seedIndustries(prisma: PrismaClient): Promise<void> {
         gidcZoneId:           zone?.id,
         lat,
         lng,
-        capacity:             ind.capacity,
+        capacity:             ind.capacity as Prisma.InputJsonValue,
         classificationScheme: SCHEME,
       },
       create: {
@@ -300,7 +300,7 @@ export async function seedIndustries(prisma: PrismaClient): Promise<void> {
         gidcZoneId:           zone?.id,
         lat,
         lng,
-        capacity:             ind.capacity,
+        capacity:             ind.capacity as Prisma.InputJsonValue,
         classificationScheme: SCHEME,
       },
     })

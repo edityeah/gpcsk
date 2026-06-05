@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../db.js'
 import { requireAuth, requireRole } from '../auth/middleware.js'
 import { writeAudit } from '../audit/service.js'
@@ -48,7 +49,7 @@ enforcementRouter.get('/', requireAuth, async (req, res) => {
 
   const { state, industryId, type, draftedById, reviewedById, limit, cursor } = parsed.data
 
-  const where: Parameters<typeof prisma.enforcementAction.findMany>[0]['where'] = {}
+  const where: Prisma.EnforcementActionWhereInput = {}
   if (state)       where.state       = state
   if (industryId)  where.industryId  = industryId
   if (type)        where.type        = type
@@ -145,7 +146,7 @@ enforcementRouter.post(
         industryId,
         type,
         draftedById: actorId,
-        evidence: evidence as Record<string, unknown>,
+        evidence: evidence as Prisma.InputJsonValue,
         violationIds,
         state: 'DRAFT',
       },
