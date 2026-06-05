@@ -329,8 +329,11 @@ function InspectionsTab({ industryId }: { industryId: string }) {
 
   useEffect(() => {
     if (!token) return
-    api<{ inspections: Inspection[] }>(`/api/inspections?industryId=${industryId}&limit=20`, { token })
-      .then((r) => setInspections(r.inspections))
+    api<{ items: Inspection[]; inspections?: Inspection[] }>(
+      `/api/inspections?industryId=${industryId}&limit=20`,
+      { token },
+    )
+      .then((r) => setInspections(r.items ?? r.inspections ?? []))
       .catch(() => setInspections([]))
       .finally(() => setLoading(false))
   }, [industryId, token])
