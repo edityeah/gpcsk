@@ -563,15 +563,18 @@ statsRouter.get('/war-room', requireAuth, async (_req, res) => {
   })
 
   // ── Complaint hotspot points (recent week) ────────────────────────────────
+  // Complaint has no districtId column (it has lat/lng); districts are reached
+  // via the linked Industry. Group by rounded lat/lng for the map overlay and
+  // skip the district label in this raw query — the canvas can look it up
+  // later from /api/industries if needed.
   const hotspotRaw = await prisma.$queryRaw<
-    Array<{ lat: number; lng: number; count: bigint; sev: string; districtId: string | null }>
+    Array<{ lat: number; lng: number; count: bigint; sev: string }>
   >`
     SELECT
-      ROUND(lat::numeric, 1)::float              AS lat,
-      ROUND(lng::numeric, 1)::float              AS lng,
-      COUNT(*)::bigint                            AS count,
-      MAX(severity::text)                         AS sev,
-      MAX("districtId"::text)                     AS "districtId"
+      ROUND(lat::numeric, 1)::float  AS lat,
+      ROUND(lng::numeric, 1)::float  AS lng,
+      COUNT(*)::bigint               AS count,
+      MAX(severity::text)            AS sev
     FROM   "Complaint"
     WHERE  lat IS NOT NULL
       AND  lng IS NOT NULL
@@ -635,7 +638,6 @@ statsRouter.get('/war-room', requireAuth, async (_req, res) => {
       lng: h.lng,
       count: Number(h.count),
       severity: h.sev,
-      districtId: h.districtId,
     })),
     generatedAt: now,
   })
