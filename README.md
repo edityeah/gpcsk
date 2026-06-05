@@ -22,14 +22,20 @@ cp .env.example .env   # then edit OPENAI_API_KEY if needed for slice 7
 # 5. Run database migrations.
 pnpm --filter @gpcsk/api exec prisma migrate dev
 
-# 6. Seed demo users.
+# 6. Seed full demo dataset (industries, consents, sensors, CETPs, inspections,
+#    violations, enforcement actions, complaints, knowledge docs).
 pnpm --filter @gpcsk/api run db:seed
 
-# 7. Launch both apps in parallel.
+# 7. Build the RAG index (skips chunks when OPENAI_API_KEY is a placeholder).
+pnpm --filter @gpcsk/api run rag:ingest
+
+# 8. Launch both apps in parallel.
 pnpm dev
 ```
 
 Then open `http://127.0.0.1:3001`. Sign in with phone `9000000005` + OTP `1234` (Senior Reviewer), or use the demo role picker.
+
+**Full demo walkthrough →** [docs/DEMO.md](docs/DEMO.md).
 
 ## Documentation
 
