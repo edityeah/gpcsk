@@ -191,9 +191,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       // If there's no current thread, mint a placeholder client-side
       // (the API will return the real threadId in the response).
+      // Canvas-scoped messages must NOT create a new sidebar thread — they
+      // append to the current thread (or a silent scratch thread that never
+      // appears as a sidebar entry if there is truly no active thread).
       let threadId = currentThreadId
-      const isNewThread = !threadId
-      if (!threadId) {
+      const isNewThread = !threadId && !canvasContext
+      if (!threadId && !canvasContext) {
         threadId = makeLocalId('t')
         setCurrentThreadId(threadId)
         setThreads((prev) => [
@@ -204,8 +207,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           },
           ...prev,
         ])
+      } else if (!threadId && canvasContext) {
+        // Canvas message with no active thread — use a transient bucket that
+        // is NOT added to the sidebar threads list.
+        threadId = makeLocalId('t')
+        setCurrentThreadId(threadId)
       }
-      const tid = threadId
+      // At this point threadId is always a non-null string (assigned in all branches above).
+      const tid = threadId as string
 
       setMessagesByThread((prev) => ({
         ...prev,
@@ -245,19 +254,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
         if (res.kind === 'canvas' && res.module) {
           openCanvas(res.module, res.args)
-          const assistant: ChatMessage = {
-            id: makeLocalId('m'),
-            role: 'assistant',
-            kind: 'answer',
-            content: `Opening ${res.module.replace(/^OPEN_/, '').replace(/_/g, ' ').toLowerCase()}…`,
-            module: res.module,
-            args: res.args,
-            createdAt: new Date().toISOString(),
-          }
-          setMessagesByThread((prev) => ({
-            ...prev,
-            [finalId]: [...(prev[finalId] ?? []), assistant],
-          }))
+          // Do NOT append a text bubble — the canvas opening is the response.
+          // Adding "Opening war room…" text is noise; the UI already shows the panel.
         } else if (res.kind === 'chart' && res.spec) {
           const assistant: ChatMessage = {
             id: makeLocalId('m'),

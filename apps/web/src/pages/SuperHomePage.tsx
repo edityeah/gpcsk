@@ -476,7 +476,10 @@ function ContentArea() {
   const { user } = useAuth()
   const { showToast } = useApp()
 
-  const greetedView = messages.length === 0 && !canvasState.module
+  // Only show messages that were NOT sent from inside a canvas in the main chat thread.
+  const mainChatMessages = messages.filter((m) => !(m as { canvasContext?: string }).canvasContext)
+
+  const greetedView = mainChatMessages.length === 0 && !canvasState.module
   const role = user?.role ?? 'SENIOR_REVIEWER'
   const chips = SUGGESTIONS_BY_ROLE[role] ?? []
 
@@ -505,7 +508,7 @@ function ContentArea() {
           onVoice={handleVoice}
         />
       ) : (
-        <ChatThread />
+        <ChatThread messages={mainChatMessages} />
       )}
       <MessageInput onSend={handleSend} />
     </>
@@ -648,8 +651,14 @@ function FeatureCard({ module: m, onClick }: FeatureCardProps) {
 
 // ── Chat thread ────────────────────────────────────────────────────────────
 
-function ChatThread() {
-  const { messages, busy, openCanvas } = useChat()
+import type { ChatMessage } from '../context/ChatContext.js'
+
+interface ChatThreadProps {
+  messages: ChatMessage[]
+}
+
+function ChatThread({ messages }: ChatThreadProps) {
+  const { busy, openCanvas } = useChat()
   const listRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {

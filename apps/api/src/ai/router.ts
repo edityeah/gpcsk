@@ -346,15 +346,32 @@ aiRouter.post('/message', requireAuth, async (req, res) => {
 
     // ── 3. Build tools ────────────────────────────────────────────────
     const canvasTools = buildOpenAiTools(userRole)
-    const allTools = [...canvasTools, ...dataTools]
+    // When the user is already inside a canvas, remove that canvas's own tool so
+    // the AI cannot re-open the same canvas in response to questions asked from inside it.
+    const filteredCanvasTools = canvasContext
+      ? canvasTools.filter((t) => {
+          const name = (t as { function?: { name?: string } }).function?.name
+          return name !== canvasContext
+        })
+      : canvasTools
+    const allTools = [...filteredCanvasTools, ...dataTools]
 
     // ── 4. Build system content ──────────────────────────────────────────
+    let basePrompt = SYSTEM_PROMPT
+    if (canvasContext) {
+      basePrompt +=
+        `\n\nThe user is currently viewing the ${canvasContext} canvas. ` +
+        `Do NOT call the OPEN_* tool that matches this canvas — they are already there. ` +
+        `Prefer calling data tools (queryTopPollutingIndustries, queryExceedanceTrend, etc.) ` +
+        `or answering directly with RAG. ` +
+        `Only open a DIFFERENT canvas if the question is clearly about something the current canvas does not show.`
+    }
     const systemContent =
       lang === 'gu'
-        ? `${SYSTEM_PROMPT}\n\nThe officer prefers Gujarati (gu). Respond in Gujarati where natural.`
+        ? `${basePrompt}\n\nThe officer prefers Gujarati (gu). Respond in Gujarati where natural.`
         : lang === 'hi'
-          ? `${SYSTEM_PROMPT}\n\nThe officer prefers Hindi (hi). Respond in Hindi where natural.`
-          : SYSTEM_PROMPT
+          ? `${basePrompt}\n\nThe officer prefers Hindi (hi). Respond in Hindi where natural.`
+          : basePrompt
 
     // ── 5. Multi-step tool loop ──────────────────────────────────────────
     // Build initial message list
