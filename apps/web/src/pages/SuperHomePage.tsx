@@ -38,8 +38,9 @@ import { api } from '../lib/api.js'
 import { ChatProvider, useChat } from '../context/ChatContext.js'
 import { ChatBubble, TypingDots } from '../components/ChatBubble.js'
 import GpcbLogo from '../components/GpcbLogo.js'
-import { modulesForRole, findModule } from '../nlp/moduleRegistry.js'
+import { modulesForRole, findModule, suggestedPromptsFor } from '../nlp/moduleRegistry.js'
 import type { ModuleEntry } from '../nlp/moduleRegistry.js'
+import { CanvasSaathiSplit } from '../canvas/CanvasSaathiSplit.js'
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 
@@ -816,37 +817,42 @@ function CanvasOverlay() {
         </button>
       </div>
 
-      {/* Canvas content */}
-      <div className="flex-1 overflow-y-auto min-h-0">
-        {Component ? (
-          <Suspense
-            fallback={
-              <div className="h-full flex items-center justify-center">
-                <div className="flex items-center gap-2 text-txt-secondary">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="text-[13px]">Loading…</span>
+      {/* Canvas content — wrapped in CanvasSaathiSplit for the embedded chat panel */}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <CanvasSaathiSplit
+          module={canvasState.module!}
+          suggestedPrompts={suggestedPromptsFor(canvasState.module!)}
+        >
+          {Component ? (
+            <Suspense
+              fallback={
+                <div className="h-full flex items-center justify-center">
+                  <div className="flex items-center gap-2 text-txt-secondary">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span className="text-[13px]">Loading…</span>
+                  </div>
+                </div>
+              }
+            >
+              <Component {...passProps} />
+            </Suspense>
+          ) : (
+            <div className="h-full flex items-center justify-center p-6">
+              <div className="text-center max-w-sm">
+                <div className="text-[14px] font-bold text-danger mb-2">
+                  Unknown canvas module
+                </div>
+                <div className="text-[12px] text-txt-secondary">
+                  No canvas registered for{' '}
+                  <code className="px-1 py-0.5 rounded bg-surface-secondary">
+                    {canvasState.module}
+                  </code>
+                  .
                 </div>
               </div>
-            }
-          >
-            <Component {...passProps} />
-          </Suspense>
-        ) : (
-          <div className="h-full flex items-center justify-center p-6">
-            <div className="text-center max-w-sm">
-              <div className="text-[14px] font-bold text-danger mb-2">
-                Unknown canvas module
-              </div>
-              <div className="text-[12px] text-txt-secondary">
-                No canvas registered for{' '}
-                <code className="px-1 py-0.5 rounded bg-surface-secondary">
-                  {canvasState.module}
-                </code>
-                .
-              </div>
             </div>
-          </div>
-        )}
+          )}
+        </CanvasSaathiSplit>
       </div>
     </div>
   )

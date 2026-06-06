@@ -70,6 +70,8 @@ const MessageBodySchema = z.object({
   threadId: z.string().optional(),
   content: z.string().min(1).max(4000),
   lang: z.enum(['en', 'gu', 'hi']).optional().default('en'),
+  /** Canvas module id that originated this message — stored in toolCalls for client-side filtering */
+  canvasContext: z.string().optional(),
 })
 
 // ── Data query handlers ────────────────────────────────────────────────────
@@ -286,7 +288,7 @@ aiRouter.post('/message', requireAuth, async (req, res) => {
     return
   }
 
-  const { threadId: existingThreadId, content, lang } = parsed.data
+  const { threadId: existingThreadId, content, lang, canvasContext } = parsed.data
   const userId = req.auth!.sub
   const userRole = req.auth!.role as Role
 
@@ -327,7 +329,15 @@ aiRouter.post('/message', requireAuth, async (req, res) => {
 
     // ── 2. Persist user message ──────────────────────────────────────────
     await prisma.chatMessage.create({
-      data: { threadId, role: 'user', content },
+      data: {
+        threadId,
+        role: 'user',
+        content,
+        // Store canvasContext in toolCalls JSON so the client can filter canvas-scoped messages
+        ...(canvasContext
+          ? { toolCalls: [{ canvasContext }] as unknown as Prisma.InputJsonValue }
+          : {}),
+      },
     })
     await prisma.chatThread.update({
       where: { id: threadId },

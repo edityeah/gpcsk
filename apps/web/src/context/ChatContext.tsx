@@ -58,6 +58,8 @@ export type ChatMessage =
       role: 'user'
       content: string
       createdAt: string
+      /** Canvas module id this message was sent from, for scoped filtering */
+      canvasContext?: string
     }
   | {
       id: string
@@ -99,6 +101,11 @@ interface AiMessageResponse {
   threadId?: string
 }
 
+export interface SendMessageOptions {
+  /** Canvas module id to tag this message with, for bottom-pane filtering. */
+  canvasContext?: string
+}
+
 interface ChatContextValue {
   threads: ChatThread[]
   currentThread: ChatThread | null
@@ -106,7 +113,7 @@ interface ChatContextValue {
   canvasState: CanvasState
   busy: boolean
 
-  sendMessage: (content: string) => Promise<void>
+  sendMessage: (content: string, opts?: SendMessageOptions) => Promise<void>
   newThread: () => void
   openThread: (threadId: string) => void
   openCanvas: (module: string, args?: Record<string, unknown>) => void
@@ -167,9 +174,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, opts?: SendMessageOptions) => {
       const trimmed = content.trim()
       if (!trimmed || !token) return
+
+      const canvasContext = opts?.canvasContext
 
       // Optimistic user message + ensure we have a thread bucket
       const userMsg: ChatMessage = {
@@ -177,6 +186,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         role: 'user',
         content: trimmed,
         createdAt: new Date().toISOString(),
+        ...(canvasContext ? { canvasContext } : {}),
       }
 
       // If there's no current thread, mint a placeholder client-side
@@ -212,6 +222,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             lang,
             // Only forward to the API once we have a server-issued thread id
             threadId: isNewThread ? undefined : tid,
+            // Canvas context for metadata storage (backend stores, ignores for AI prompt)
+            ...(canvasContext ? { canvasContext } : {}),
           },
         })
 

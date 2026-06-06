@@ -25,6 +25,7 @@ import { api } from '../../../lib/api.js'
 import { useAuth } from '../../../context/AuthContext.js'
 import { useChat } from '../../../context/ChatContext.js'
 import { useApp } from '../../../context/AppContext.js'
+import { AskSaathiButton } from '../../../components/AskSaathiButton.js'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -376,8 +377,16 @@ export function WarRoomCanvas() {
         {/* Status banner */}
         {data && (
           <div className="rounded-2xl bg-surface-page border border-bdr-light px-5 py-4 mb-4">
-            <div className="text-[10px] font-black uppercase tracking-[3px] text-primary mb-2">
-              WAR ROOM · LIVE ANOMALIES
+            <div className="flex items-center gap-2 mb-2">
+              <div className="text-[10px] font-black uppercase tracking-[3px] text-primary flex-1">
+                WAR ROOM · LIVE ANOMALIES
+              </div>
+              {/* AskSaathiButton — use compact pill variant for section headers */}
+              <AskSaathiButton
+                prompt="What's the worst anomaly right now?"
+                label="Ask Saathi"
+                compact
+              />
             </div>
             <div className="text-[26px] font-black text-txt-primary leading-tight">
               {data.open} open

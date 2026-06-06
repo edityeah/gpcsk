@@ -19,6 +19,8 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../../context/AuthContext.js'
 import { api } from '../../../lib/api.js'
+// AskSaathiButton — example usage below; import for rollout in this canvas
+import { AskSaathiButton } from '../../../components/AskSaathiButton.js'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -251,6 +253,7 @@ export function GujaratPollutionPulseCanvas() {
           <Activity className="w-4 h-4 text-primary" />
           <h3 className="font-bold text-[14px] text-txt-primary">District × Pollution Stream Heatmap</h3>
           <span className="text-[11px] text-txt-tertiary ml-auto">30-day window</span>
+          <AskSaathiButton prompt="Compare AIR vs WATER exceedances today" compact />
         </div>
 
         {heatMatrix.districts.length === 0 ? (
@@ -316,6 +319,7 @@ export function GujaratPollutionPulseCanvas() {
           <div className="flex items-center gap-2 mb-3">
             <Factory className="w-4 h-4 text-danger" />
             <h3 className="font-bold text-[14px] text-txt-primary">Top Risk Industries</h3>
+            <AskSaathiButton prompt="Top 5 risk industries with open violations" compact />
           </div>
           {!data?.topRiskIndustries.length ? (
             <div className="text-txt-tertiary text-sm py-6 text-center">No high-risk industries found.</div>
@@ -345,6 +349,7 @@ export function GujaratPollutionPulseCanvas() {
             <AlertTriangle className="w-4 h-4 text-danger" />
             <h3 className="font-bold text-[14px] text-txt-primary">Breaking Anomalies</h3>
             <span className="ml-auto badge badge-danger">{data?.breakingAnomalies.length ?? 0} critical</span>
+            <AskSaathiButton prompt="What changed in the last 24 hours?" compact />
           </div>
           {!data?.breakingAnomalies.length ? (
             <div className="text-txt-tertiary text-sm py-6 text-center">No critical anomalies at this time.</div>

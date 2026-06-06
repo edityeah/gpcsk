@@ -20,6 +20,7 @@ import {
 import { useAuth } from '../../../context/AuthContext.js'
 import { useApp } from '../../../context/AppContext.js'
 import { api } from '../../../lib/api.js'
+import { AskSaathiButton } from '../../../components/AskSaathiButton.js'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -164,6 +165,8 @@ export function IndustryRiskIndexCanvas() {
           <div className="flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-primary" />
             <h2 className="text-[20px] font-bold text-txt-primary">Industry Risk Index</h2>
+            {/* AskSaathiButton — compact pill for chart-header pattern */}
+            <AskSaathiButton prompt="Why is the top industry ranked highest?" compact />
           </div>
           <p className="text-[12px] text-txt-tertiary mt-0.5">
             Composite score: exceedances + complaints + inspections + consent gaps

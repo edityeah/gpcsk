@@ -39,6 +39,8 @@ export interface ModuleEntry {
   description: string
   /** Sidebar grouping bucket */
   sidebarGroup: SidebarGroup
+  /** Starter prompts shown in the CanvasSaathiSplit bottom chat panel */
+  suggestedPrompts: string[]
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -58,6 +60,12 @@ const OPEN_WAR_ROOM: ModuleEntry = {
   tone: 'rose',
   description: 'Live anomalies — investigate + act',
   sidebarGroup: 'Dashboards',
+  suggestedPrompts: [
+    "What's the worst anomaly right now?",
+    'Which CETP needs urgent action?',
+    'Top 3 industries to inspect today',
+    'Summarise open critical alerts',
+  ],
 }
 
 const OPEN_GUJARAT_PULSE: ModuleEntry = {
@@ -73,6 +81,12 @@ const OPEN_GUJARAT_PULSE: ModuleEntry = {
   tone: 'indigo',
   description: 'State-wide pollution overview',
   sidebarGroup: 'Dashboards',
+  suggestedPrompts: [
+    'Compare AIR vs WATER exceedances today',
+    'What changed in the last 24 hours?',
+    'Top hotspot district right now',
+    'Worst-performing CETP this month',
+  ],
 }
 
 const OPEN_INDUSTRY_RISK_INDEX: ModuleEntry = {
@@ -88,6 +102,12 @@ const OPEN_INDUSTRY_RISK_INDEX: ModuleEntry = {
   tone: 'rose',
   description: 'Ranked composite risk score per industry',
   sidebarGroup: 'Dashboards',
+  suggestedPrompts: [
+    'Why is the top industry ranked highest?',
+    'Top 5 risk industries in Bharuch',
+    'Highest risk industries with no inspection in 6 months',
+    'Compare Ankleshwar vs Vatva',
+  ],
 }
 
 const OPEN_ENFORCEMENT_PIPELINE: ModuleEntry = {
@@ -103,6 +123,12 @@ const OPEN_ENFORCEMENT_PIPELINE: ModuleEntry = {
   tone: 'amber',
   description: 'Show-cause / closure / recovery kanban',
   sidebarGroup: 'Dashboards',
+  suggestedPrompts: [
+    'Show me actions pending review > 14 days',
+    'How many show-cause notices were committed this month?',
+    'Most common reason for revision?',
+    'Avg time from draft to committed',
+  ],
 }
 
 const OPEN_TREND_LAB: ModuleEntry = {
@@ -118,6 +144,12 @@ const OPEN_TREND_LAB: ModuleEntry = {
   tone: 'sky',
   description: 'Period-over-period analysis for any station',
   sidebarGroup: 'Dashboards',
+  suggestedPrompts: [
+    'Plot Sabarmati BOD over 12 months',
+    'PM10 trend at Vatva over 30 days',
+    'Compare Ankleshwar AAQM stations',
+    'Festival monitoring spike analysis',
+  ],
 }
 
 const OPEN_MAKER_CHECKER_QUEUE: ModuleEntry = {
@@ -133,6 +165,12 @@ const OPEN_MAKER_CHECKER_QUEUE: ModuleEntry = {
   tone: 'emerald',
   description: 'Pending approvals awaiting your review',
   sidebarGroup: 'Workflows',
+  suggestedPrompts: [
+    "What's the oldest pending item?",
+    'Items breaching SLA',
+    'Who has the most drafts pending?',
+    'Approve the safe ones in bulk',
+  ],
 }
 
 const OPEN_BROADCAST: ModuleEntry = {
@@ -148,6 +186,11 @@ const OPEN_BROADCAST: ModuleEntry = {
   tone: 'violet',
   description: 'Compose statewide announcements',
   sidebarGroup: 'Tools',
+  suggestedPrompts: [
+    'Summarise what I\'m seeing',
+    'Top items needing attention',
+    'Trend over the last 30 days',
+  ],
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -163,6 +206,12 @@ const OPEN_APPLICATION_QUEUE: ModuleEntry = {
   tone: 'indigo',
   description: 'Consent applications awaiting processing',
   sidebarGroup: 'Workflows',
+  suggestedPrompts: [
+    'Applications waiting >30 days',
+    'Renewals due next 30 days',
+    'Document-incomplete applications',
+    'Top sectors applying for CTE',
+  ],
 }
 
 const OPEN_CONSENT_PIPELINE: ModuleEntry = {
@@ -174,6 +223,12 @@ const OPEN_CONSENT_PIPELINE: ModuleEntry = {
   tone: 'sky',
   description: 'End-to-end consent application status',
   sidebarGroup: 'Dashboards',
+  suggestedPrompts: [
+    'Capacity vs declared consent outliers',
+    'CTOs expiring this quarter',
+    'HW Auth pipeline status',
+    'Most-rejected reasons',
+  ],
 }
 
 const OPEN_RENEWAL_RADAR: ModuleEntry = {
@@ -185,6 +240,12 @@ const OPEN_RENEWAL_RADAR: ModuleEntry = {
   tone: 'amber',
   description: 'Industries with upcoming consent renewals',
   sidebarGroup: 'Dashboards',
+  suggestedPrompts: [
+    "What's expiring in 30 days?",
+    'By district',
+    'Industries with no renewal application yet',
+    'Risk if these are not renewed',
+  ],
 }
 
 const OPEN_CAPACITY_VS_CONSENT: ModuleEntry = {
@@ -196,6 +257,11 @@ const OPEN_CAPACITY_VS_CONSENT: ModuleEntry = {
   tone: 'teal',
   description: 'Compare actual output against consented limits',
   sidebarGroup: 'Tools',
+  suggestedPrompts: [
+    'Summarise what I\'m seeing',
+    'Top items needing attention',
+    'Trend over the last 30 days',
+  ],
 }
 
 const OPEN_DOCUMENT_COMPLETENESS: ModuleEntry = {
@@ -207,6 +273,11 @@ const OPEN_DOCUMENT_COMPLETENESS: ModuleEntry = {
   tone: 'emerald',
   description: 'Missing documents by application batch',
   sidebarGroup: 'Tools',
+  suggestedPrompts: [
+    'Summarise what I\'m seeing',
+    'Top items needing attention',
+    'Trend over the last 30 days',
+  ],
 }
 
 const OPEN_CONSENT_DRAFT: ModuleEntry = {
@@ -218,6 +289,11 @@ const OPEN_CONSENT_DRAFT: ModuleEntry = {
   tone: 'violet',
   description: 'AI-assisted consent order drafting',
   sidebarGroup: 'Workflows',
+  suggestedPrompts: [
+    'Summarise what I\'m seeing',
+    'Top items needing attention',
+    'Trend over the last 30 days',
+  ],
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -237,6 +313,12 @@ const OPEN_OCEMS_LIVE_GRID: ModuleEntry = {
   tone: 'sky',
   description: 'Real-time online continuous emissions monitoring',
   sidebarGroup: 'Dashboards',
+  suggestedPrompts: [
+    'Which OCEMS stations are exceeding now?',
+    'Group exceedances by parameter',
+    'Show only critical stations',
+    'Compare last hour vs avg',
+  ],
 }
 
 const OPEN_EXCEEDANCE_FEED: ModuleEntry = {
@@ -252,6 +334,12 @@ const OPEN_EXCEEDANCE_FEED: ModuleEntry = {
   tone: 'rose',
   description: 'Live stream of norm exceedances',
   sidebarGroup: 'Workflows',
+  suggestedPrompts: [
+    'Latest CRITICAL exceedances',
+    'Group by industry',
+    'Confirm or sensor-glitch the recent COD spike',
+    'Trend over the last 7 days',
+  ],
 }
 
 const OPEN_PREDICTED_EXCEEDANCE: ModuleEntry = {
@@ -267,6 +355,11 @@ const OPEN_PREDICTED_EXCEEDANCE: ModuleEntry = {
   tone: 'amber',
   description: 'ML-based exceedance forecasts by station',
   sidebarGroup: 'Tools',
+  suggestedPrompts: [
+    'Summarise what I\'m seeing',
+    'Top items needing attention',
+    'Trend over the last 30 days',
+  ],
 }
 
 const OPEN_VOC_CLUSTER_MONITOR: ModuleEntry = {
@@ -282,6 +375,12 @@ const OPEN_VOC_CLUSTER_MONITOR: ModuleEntry = {
   tone: 'violet',
   description: 'Volatile organic compound cluster monitoring',
   sidebarGroup: 'Dashboards',
+  suggestedPrompts: [
+    'Top benzene exceedances',
+    'Compare Vatva vs Ankleshwar VOC clusters',
+    'Which VOC parameters are most over norm?',
+    'Trend at top cluster over 30 days',
+  ],
 }
 
 const OPEN_CETP_SCORECARD: ModuleEntry = {
@@ -297,6 +396,12 @@ const OPEN_CETP_SCORECARD: ModuleEntry = {
   tone: 'teal',
   description: 'Compliance scorecard for common effluent treatment plants',
   sidebarGroup: 'Dashboards',
+  suggestedPrompts: [
+    'Which CETPs reported bypass?',
+    'Compare AHSPA vs Naroda Enviro',
+    'CETPs trending worse over 3 months',
+    'Member-unit count by CETP',
+  ],
 }
 
 const OPEN_AAQM_MONITOR: ModuleEntry = {
@@ -312,6 +417,12 @@ const OPEN_AAQM_MONITOR: ModuleEntry = {
   tone: 'cyan',
   description: 'Ambient air quality monitoring station overview',
   sidebarGroup: 'Dashboards',
+  suggestedPrompts: [
+    'Worst PM2.5 districts today',
+    'Compare Vapi vs Ankleshwar AAQM',
+    'How many SAMP stations are down?',
+    'AQI trend over last month',
+  ],
 }
 
 const OPEN_FESTIVAL_PLANNER: ModuleEntry = {
@@ -327,6 +438,12 @@ const OPEN_FESTIVAL_PLANNER: ModuleEntry = {
   tone: 'fuchsia',
   description: 'Seasonal pollution monitoring plan builder',
   sidebarGroup: 'Tools',
+  suggestedPrompts: [
+    'Plan Ganesh Utsav 2026 monitoring',
+    'Compare 2024 vs 2025 Sabarmati BOD spikes',
+    'What worked last year?',
+    'Stations to deploy on Day 0',
+  ],
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -346,6 +463,12 @@ const OPEN_INSPECTION_PRIORITISATION: ModuleEntry = {
   tone: 'indigo',
   description: 'Risk-ranked list of industries due for inspection',
   sidebarGroup: 'Dashboards',
+  suggestedPrompts: [
+    'Top 5 industries to inspect this week',
+    'Who has the most overdue inspections?',
+    'High-risk industries we have never visited',
+    'Suggest a route for Ankleshwar',
+  ],
 }
 
 const OPEN_INSPECTION_SCHEDULER: ModuleEntry = {
@@ -361,6 +484,11 @@ const OPEN_INSPECTION_SCHEDULER: ModuleEntry = {
   tone: 'sky',
   description: 'Plan and assign upcoming field inspections',
   sidebarGroup: 'Tools',
+  suggestedPrompts: [
+    'Summarise what I\'m seeing',
+    'Top items needing attention',
+    'Trend over the last 30 days',
+  ],
 }
 
 const OPEN_ONSITE_CHECKLIST: ModuleEntry = {
@@ -376,6 +504,11 @@ const OPEN_ONSITE_CHECKLIST: ModuleEntry = {
   tone: 'amber',
   description: 'Digital inspection checklist for field use',
   sidebarGroup: 'Tools',
+  suggestedPrompts: [
+    'Summarise what I\'m seeing',
+    'Top items needing attention',
+    'Trend over the last 30 days',
+  ],
 }
 
 const OPEN_DRAFT_NOTICE: ModuleEntry = {
@@ -391,6 +524,12 @@ const OPEN_DRAFT_NOTICE: ModuleEntry = {
   tone: 'rose',
   description: 'AI-drafted show-cause and closure notices',
   sidebarGroup: 'Workflows',
+  suggestedPrompts: [
+    'Draft a show-cause for the top exceedance',
+    "Last week's similar notices for reference",
+    'What sections of the Air Act apply here?',
+    'Suggest evidence chips',
+  ],
 }
 
 const OPEN_VIOLATIONS_REGISTER: ModuleEntry = {
@@ -406,6 +545,12 @@ const OPEN_VIOLATIONS_REGISTER: ModuleEntry = {
   tone: 'violet',
   description: 'Searchable log of all recorded violations',
   sidebarGroup: 'Dashboards',
+  suggestedPrompts: [
+    'Critical violations this quarter',
+    'Repeat offenders',
+    'Violations by sector',
+    'What was the average resolution time?',
+  ],
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -425,6 +570,12 @@ const OPEN_COMPLAINT_INBOX: ModuleEntry = {
   tone: 'indigo',
   description: 'Incoming citizen pollution complaints',
   sidebarGroup: 'Workflows',
+  suggestedPrompts: [
+    'Show me critical complaints today',
+    'Anonymous complaints last week',
+    'Complaints near Naroda GIDC',
+    'Which categories spiked this month?',
+  ],
 }
 
 const OPEN_AUTO_TRIAGE: ModuleEntry = {
@@ -440,6 +591,11 @@ const OPEN_AUTO_TRIAGE: ModuleEntry = {
   tone: 'amber',
   description: 'AI-classified complaint severity distribution',
   sidebarGroup: 'Tools',
+  suggestedPrompts: [
+    'Summarise what I\'m seeing',
+    'Top items needing attention',
+    'Trend over the last 30 days',
+  ],
 }
 
 const OPEN_COMPLAINT_HOTSPOT_MAP: ModuleEntry = {
@@ -455,6 +611,12 @@ const OPEN_COMPLAINT_HOTSPOT_MAP: ModuleEntry = {
   tone: 'rose',
   description: 'Geographical clustering of complaint hotspots',
   sidebarGroup: 'Dashboards',
+  suggestedPrompts: [
+    'Top 3 hotspots right now',
+    'Compare district hotspots over 30 days',
+    'Hotspots near Red-category industries',
+    'Where to assign more officers?',
+  ],
 }
 
 const OPEN_INDUSTRY_CORRELATION: ModuleEntry = {
@@ -470,6 +632,11 @@ const OPEN_INDUSTRY_CORRELATION: ModuleEntry = {
   tone: 'teal',
   description: 'Link complaints to responsible industries',
   sidebarGroup: 'Tools',
+  suggestedPrompts: [
+    'Summarise what I\'m seeing',
+    'Top items needing attention',
+    'Trend over the last 30 days',
+  ],
 }
 
 const OPEN_CITIZEN_RESPONSE_TRACKER: ModuleEntry = {
@@ -485,6 +652,12 @@ const OPEN_CITIZEN_RESPONSE_TRACKER: ModuleEntry = {
   tone: 'violet',
   description: 'Track reply status for every citizen complaint',
   sidebarGroup: 'Workflows',
+  suggestedPrompts: [
+    'Complaints aging past SLA',
+    'Show only IN_PROGRESS items I own',
+    'Reply templates for odour complaints',
+    'Statistics this week',
+  ],
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -512,6 +685,12 @@ const OPEN_INDUSTRY_DEEP_DIVE: ModuleEntry = {
   tone: 'slate',
   description: 'Full profile for any registered industry',
   sidebarGroup: 'Tools',
+  suggestedPrompts: [
+    'Recent violations for this industry',
+    'Inspection history',
+    'Complaint timeline',
+    'Generate a 1-pager',
+  ],
 }
 
 const OPEN_NOTIFICATIONS: ModuleEntry = {
@@ -527,6 +706,12 @@ const OPEN_NOTIFICATIONS: ModuleEntry = {
   tone: 'sky',
   description: 'System alerts and action reminders',
   sidebarGroup: 'Tools',
+  suggestedPrompts: [
+    'What needs my attention?',
+    'Mark all read',
+    'Filter to maker-checker only',
+    'Notifications by category',
+  ],
 }
 
 const OPEN_REPORT_EXPORT: ModuleEntry = {
@@ -542,6 +727,11 @@ const OPEN_REPORT_EXPORT: ModuleEntry = {
   tone: 'slate',
   description: 'Export dashboards and data to PDF / Excel',
   sidebarGroup: 'Tools',
+  suggestedPrompts: [
+    'Summarise what I\'m seeing',
+    'Top items needing attention',
+    'Trend over the last 30 days',
+  ],
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -598,4 +788,19 @@ export function findModule(id: string): ModuleEntry | undefined {
 /** Filter modules visible to a given role */
 export function modulesForRole(role: Role): ModuleEntry[] {
   return moduleRegistry.filter((m) => m.allowedRoles.includes(role))
+}
+
+const DEFAULT_PROMPTS: string[] = [
+  "Summarise what I'm seeing",
+  'Top items needing attention',
+  'Trend over the last 30 days',
+]
+
+/**
+ * Returns the suggestedPrompts for a canvas module id.
+ * Falls back to a generic set if the module is not registered.
+ */
+export function suggestedPromptsFor(moduleId: string): string[] {
+  const entry = findModule(moduleId)
+  return entry?.suggestedPrompts ?? DEFAULT_PROMPTS
 }
