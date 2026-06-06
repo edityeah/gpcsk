@@ -41,7 +41,10 @@ authRouter.post('/xgn/callback', async (req, res) => {
 })
 
 authRouter.post('/demo-login', async (req, res) => {
-  if (env.NODE_ENV === 'production') return res.status(404).json({ error: 'not_found' })
+  // Demo build — demo-login intentionally available in production so officers
+  // and reviewers can sign in without provisioned phone / XGN identities.
+  // Lock this back down (NODE_ENV === 'production' → 404) when real XGN SSO
+  // is wired up in v2.
   const parsed = DemoLoginSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: 'invalid_role' })
   const user = await prisma.user.findFirst({ where: { role: parsed.data.role } })

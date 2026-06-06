@@ -47,3 +47,4 @@ docs/references/gpcb-sources/gpcb-annual-report-2024-25.pdf
 *.tsbuildinfo
 apps/web/vite.config.d.ts
 apps/web/vite.config.js
+.env.production

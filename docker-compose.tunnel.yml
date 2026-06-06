@@ -1,60 +1,73 @@
 # Cloudflare Tunnel production deployment.
-# Bind every service to 127.0.0.1 — only cloudflared on the host can reach them.
-# Usage:
-#   docker compose -f docker-compose.tunnel.yml up -d --build
 #
-# Secrets come from the project-root .env.
+# Coexists side-by-side with the dev stack (docker-compose.yml):
+#   - dev  : gpcsk-db on host port 5434
+#   - prod : gpcsk-prod-{db,api,web} on host ports 5435 / 8002 / 3002
+#
+# Bring up:
+#   docker compose --project-name gpcsk-prod \
+#                  --env-file .env.production \
+#                  -f docker-compose.tunnel.yml \
+#                  up -d --build
+#
+# All host port bindings are 127.0.0.1 only — only cloudflared on the host
+# can reach them.
 
 services:
   db:
     image: pgvector/pgvector:pg16
+    container_name: gpcsk-prod-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: gpcsk
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
       POSTGRES_DB: gpcsk
     volumes:
-      - gpcsk-pgdata:/var/lib/postgresql/data
+      - gpcsk-prod-pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5435:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gpcsk -d gpcsk"]
       interval: 10s
       timeout: 5s
       retries: 10
-    networks: [gpcsk]
+    networks: [gpcsk-prod]
 
   api:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+    container_name: gpcsk-prod-api
     restart: unless-stopped
     depends_on:
       db: { condition: service_healthy }
     ports:
-      - "127.0.0.1:8001:8001"
+      - "127.0.0.1:8002:8001"
     environment:
       DATABASE_URL: postgresql://gpcsk:${POSTGRES_PASSWORD}@db:5432/gpcsk?schema=public
       API_PORT: "8001"
-      API_JWT_SECRET: ${API_JWT_SECRET:?set API_JWT_SECRET in .env}
+      API_JWT_SECRET: ${API_JWT_SECRET:?set API_JWT_SECRET in .env.production}
       API_JWT_TTL_HOURS: "24"
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?set CORS_ALLOWED_ORIGINS in .env}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?set CORS_ALLOWED_ORIGINS in .env.production}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       NODE_ENV: production
-    networks: [gpcsk]
+    networks: [gpcsk-prod]
 
   web:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL:?set VITE_API_URL in .env}
+        VITE_API_URL: ${VITE_API_URL:?set VITE_API_URL in .env.production}
+    container_name: gpcsk-prod-web
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3001:3001"
-    networks: [gpcsk]
+      - "127.0.0.1:3002:3001"
+    networks: [gpcsk-prod]
 
 volumes:
-  gpcsk-pgdata:
+  gpcsk-prod-pgdata:
 
 networks:
-  gpcsk:
+  gpcsk-prod:
     driver: bridge
