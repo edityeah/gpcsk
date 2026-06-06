@@ -28,6 +28,8 @@ import {
   ArrowLeft,
   X,
   Loader2,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react'
 import { Suspense } from 'react'
 import { useApp } from '../context/AppContext.js'
@@ -755,7 +757,13 @@ function WarRoomPill() {
 
 function CanvasOverlay() {
   const { canvasState, closeCanvas } = useChat()
+  const [expanded, setExpanded] = useState(false)
   const open = canvasState.module !== null
+
+  // Reset to half-width whenever a new canvas opens
+  useEffect(() => {
+    if (open) setExpanded(false)
+  }, [canvasState.module, open])
 
   const entry = canvasState.module ? findModule(canvasState.module) : null
   const title =
@@ -771,8 +779,8 @@ function CanvasOverlay() {
 
   return (
     <div
-      className={`absolute inset-0 z-20 flex flex-col bg-white transition-transform duration-300 ${
-        open ? 'translate-x-0' : 'translate-x-full'
+      className={`absolute right-0 top-0 bottom-0 z-20 flex flex-col bg-white shadow-canvas animate-canvas-slide ${
+        expanded ? 'w-full' : 'w-full md:w-3/5'
       }`}
     >
       {/* Header */}
@@ -786,6 +794,18 @@ function CanvasOverlay() {
           <ArrowLeft className="w-4 h-4 text-txt-secondary" />
         </button>
         <span className="flex-1 text-[14px] font-bold text-txt-primary truncate">{title}</span>
+        {/* Maximize / Minimize toggle */}
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className="w-9 h-9 rounded-xl hover:bg-surface-secondary flex items-center justify-center transition"
+          title={expanded ? 'Restore' : 'Maximize'}
+        >
+          {expanded
+            ? <Minimize2 className="w-4 h-4 text-txt-secondary" />
+            : <Maximize2 className="w-4 h-4 text-txt-secondary" />
+          }
+        </button>
         <button
           type="button"
           onClick={closeCanvas}
