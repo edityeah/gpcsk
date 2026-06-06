@@ -124,18 +124,29 @@ async function main() {
 
     logger.info({ filename: config.filename }, 'rag:ingest-pdfs — reading PDF')
 
-    let pdfText: string
+    let pdfText: string = ''
     try {
       const buffer = fs.readFileSync(filePath)
       const parsed = await pdfParse(buffer)
       pdfText = normaliseText(parsed.text)
     } catch (err: unknown) {
-      logger.error({ filename: config.filename, err }, 'rag:ingest-pdfs — PDF parse failed, skipping')
-      continue
+      logger.warn({ filename: config.filename, err }, 'rag:ingest-pdfs — pdf-parse failed, will try OCR sibling .txt')
+    }
+
+    // Image-only / scanned PDFs (e.g. AR 2024-25) yield no text from pdf-parse.
+    // Fall back to a sibling .txt file produced by an offline OCR pass
+    // (pdftoppm + tesseract). Drop the OCR output next to the PDF with the
+    // same basename and `.txt` extension.
+    if (!pdfText || pdfText.length < 100) {
+      const sidecarTxt = filePath.replace(/\.pdf$/i, '.txt')
+      if (fs.existsSync(sidecarTxt)) {
+        logger.info({ filename: config.filename, sidecar: path.basename(sidecarTxt) }, 'rag:ingest-pdfs — using OCR sidecar .txt')
+        pdfText = normaliseText(fs.readFileSync(sidecarTxt, 'utf8'))
+      }
     }
 
     if (!pdfText || pdfText.length < 100) {
-      logger.warn({ filename: config.filename }, 'rag:ingest-pdfs — extracted text too short, skipping')
+      logger.warn({ filename: config.filename }, 'rag:ingest-pdfs — no extractable text (no PDF text + no OCR sidecar), skipping')
       continue
     }
 
