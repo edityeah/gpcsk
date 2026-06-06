@@ -52,11 +52,11 @@ const OPEN_WAR_ROOM: ModuleEntry = {
       default: m.WarRoomCanvas,
     })),
   ),
-  allowedRoles: ['SENIOR_REVIEWER'],
+  allowedRoles: ['SENIOR_REVIEWER', 'INSPECTION_ENFORCEMENT_OFFICER'],
   label: { en: 'War Room', gu: 'વોર રૂમ', hi: 'वॉर रूम' },
-  icon: 'ShieldAlert',
+  icon: 'Siren',
   tone: 'rose',
-  description: 'Live crisis board — breaking critical exceedances, hotspots, pending enforcement',
+  description: 'Live anomalies — investigate + act',
   sidebarGroup: 'Dashboards',
 }
 

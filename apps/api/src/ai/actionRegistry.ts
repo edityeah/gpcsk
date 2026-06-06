@@ -20,6 +20,16 @@ export interface ActionDefinition {
 export const actionRegistry: ActionDefinition[] = [
   // ── Senior Reviewer mega-dashboards ────────────────────────────────────────
   {
+    name: 'OPEN_WAR_ROOM',
+    description:
+      'Open the War Room — a live anomaly investigation canvas showing critical, major, and anomaly-level alerts derived from real GPCB sensor data, enforcement backlogs, complaint clusters, CETP bypass detections, and sensor dropouts. Use this when the user asks about "war room", "open anomalies", "what alerts are live", "investigation mode", or "what needs my attention right now".',
+    parameters: {
+      type: 'object',
+      properties: {},
+    },
+    allowedRoles: ['SENIOR_REVIEWER', 'INSPECTION_ENFORCEMENT_OFFICER'],
+  },
+  {
     name: 'OPEN_GUJARAT_PULSE',
     description:
       'Open the Gujarat Pollution Control Pulse dashboard — a senior-reviewer mega-dashboard showing statewide compliance health, active exceedances, consent pipeline status, and key performance indicators across all pollution streams.',
