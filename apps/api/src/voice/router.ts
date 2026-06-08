@@ -100,21 +100,26 @@ voiceRouter.post('/session', requireAuth, async (req, res) => {
     : VOICE_SYSTEM_PROMPT
 
   try {
-    const openaiRes = await fetch('https://api.openai.com/v1/realtime/sessions', {
+    // OpenAI Realtime API: endpoint is /v1/realtime/client_secrets (new shape).
+    // The previous /v1/realtime/sessions path returns "Invalid URL".
+    const openaiRes = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env['OPENAI_API_KEY']}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-realtime-preview-2024-12-17',
-        voice: 'alloy',
-        instructions,
-        modalities: ['text', 'audio'],
-        turn_detection: { type: 'server_vad' },
-        input_audio_transcription: { model: 'whisper-1' },
-        tools: VOICE_TOOLS,
-        tool_choice: 'auto',
+        session: {
+          type: 'realtime',
+          model: 'gpt-realtime',
+          instructions,
+          audio: {
+            input:  { transcription: { model: 'whisper-1' }, turn_detection: { type: 'server_vad' } },
+            output: { voice: 'alloy' },
+          },
+          tools: VOICE_TOOLS,
+          tool_choice: 'auto',
+        },
       }),
     })
 
@@ -125,8 +130,16 @@ voiceRouter.post('/session', requireAuth, async (req, res) => {
       return
     }
 
-    const data = await openaiRes.json()
-    res.json(data)
+    const data = await openaiRes.json() as { value: string; expires_at: number; session: { id: string; model: string } }
+    // Normalise into the shape the frontend already expects:
+    //   { client_secret: { value }, expires_at, model }
+    // so we don't have to change CallProvider every time OpenAI moves the spec.
+    res.json({
+      client_secret: { value: data.value },
+      expires_at: data.expires_at,
+      model: data.session?.model ?? 'gpt-realtime',
+      session: data.session,
+    })
   } catch (err: unknown) {
     logger.error({ err }, 'voice/session — unhandled error')
     res.status(500).json({ error: 'server_error' })
