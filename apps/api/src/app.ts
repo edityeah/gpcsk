@@ -17,6 +17,7 @@ import { enforcementRouter } from './enforcement/router.js'
 import { aiRouter } from './ai/router.js'
 import { broadcastsRouter } from './broadcasts/router.js'
 import { notificationsRouter } from './notifications/router.js'
+import { voiceRouter } from './voice/router.js'
 
 export function buildApp(): Express {
   const app = express()
@@ -37,6 +38,7 @@ export function buildApp(): Express {
   app.use('/api/inspections', inspectionsRouter)
   app.use('/api/enforcement', enforcementRouter)
   app.use('/api/ai', aiRouter)
+  app.use('/api/voice', voiceRouter)
   app.use('/api/broadcasts', broadcastsRouter)
   app.use('/api/notifications', notificationsRouter)
 

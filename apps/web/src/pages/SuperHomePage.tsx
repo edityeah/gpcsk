@@ -36,6 +36,9 @@ import { useApp } from '../context/AppContext.js'
 import { useAuth } from '../context/AuthContext.js'
 import { api } from '../lib/api.js'
 import { ChatProvider, useChat } from '../context/ChatContext.js'
+import { CallProvider, useCall } from '../context/CallProvider.js'
+import { FloatingCallPill } from '../components/FloatingCallPill.js'
+import { CanvasCallButton } from '../components/CanvasCallButton.js'
 import { ChatBubble, TypingDots } from '../components/ChatBubble.js'
 import GpcbLogo from '../components/GpcbLogo.js'
 import { modulesForRole, findModule, suggestedPromptsFor } from '../nlp/moduleRegistry.js'
@@ -126,7 +129,10 @@ function groupThreads(threads: ChatThread[]) {
 export function SuperHomePage() {
   return (
     <ChatProvider>
-      <Shell />
+      <CallProvider>
+        <Shell />
+        <FloatingCallPill />
+      </CallProvider>
     </ChatProvider>
   )
 }
@@ -161,6 +167,7 @@ function Shell() {
             <Menu className="w-5 h-5 text-txt-secondary" />
           </button>
           <div className="flex items-center gap-2 md:gap-3">
+            <VoiceQuickButton />
             <SaathiQuickButton />
             <BellButton />
           </div>
@@ -416,6 +423,24 @@ function ProfilePill() {
   )
 }
 
+// ── Voice quick button ─────────────────────────────────────────────────────
+
+function VoiceQuickButton() {
+  const { startCall, isInCall, isConnecting } = useCall()
+  const disabled = isInCall || isConnecting
+  return (
+    <button
+      type="button"
+      onClick={() => { void startCall() }}
+      disabled={disabled}
+      title={disabled ? 'Call in progress' : 'Talk to Saathi'}
+      className="w-9 h-9 rounded-full border border-bdr-light flex items-center justify-center hover:bg-surface-page disabled:opacity-40 transition bg-white"
+    >
+      <Phone className="w-[17px] h-[17px] text-primary" />
+    </button>
+  )
+}
+
 // ── Saathi quick button ────────────────────────────────────────────────────
 
 function SaathiQuickButton() {
@@ -474,7 +499,7 @@ function BellButton() {
 function ContentArea() {
   const { messages, busy, sendMessage, canvasState } = useChat()
   const { user } = useAuth()
-  const { showToast } = useApp()
+  const { startCall } = useCall()
 
   // Only show messages that were NOT sent from inside a canvas in the main chat thread.
   const mainChatMessages = messages.filter((m) => !(m as { canvasContext?: string }).canvasContext)
@@ -495,7 +520,7 @@ function ContentArea() {
   }
 
   function handleVoice() {
-    showToast({ kind: 'info', text: 'Voice coming soon' })
+    void startCall()
   }
 
   return (
@@ -804,6 +829,13 @@ function CanvasOverlay() {
           <ArrowLeft className="w-4 h-4 text-txt-secondary" />
         </button>
         <span className="flex-1 text-[14px] font-bold text-txt-primary truncate">{title}</span>
+        {/* Canvas-scoped voice call */}
+        {canvasState.module && (
+          <CanvasCallButton
+            canvasName={canvasState.module}
+            canvasLabel={title}
+          />
+        )}
         {/* Maximize / Minimize toggle */}
         <button
           type="button"

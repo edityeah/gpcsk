@@ -43,6 +43,9 @@ const config: Config = {
         'typing':       'typing 1.2s infinite',
         'pulse-ring':   'pulse-ring 1.6s ease-out infinite',
       },
+      zIndex: {
+        60: '60',
+      },
     },
   },
   plugins: [],
