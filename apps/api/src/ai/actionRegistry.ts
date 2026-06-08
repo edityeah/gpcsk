@@ -454,7 +454,19 @@ const renderChartSchema = {
       },
     },
     description: { type: 'string', description: 'Short description shown below the chart' },
-    canvasHint: { type: 'string', description: 'Canvas module to open when "Open as canvas" is clicked' },
+    canvasHint: {
+      type: 'string',
+      description:
+        'Canvas module to open when "Open as canvas" is clicked. ALWAYS set this field based on chart content: ' +
+        'top-polluters / risk-index / industry ranking → "OPEN_INDUSTRY_RISK_INDEX"; ' +
+        'exceedance trend / count over time → "OPEN_TREND_LAB"; ' +
+        'complaints pie / category / severity breakdown → "OPEN_COMPLAINT_INBOX"; ' +
+        'enforcement bar / state breakdown → "OPEN_ENFORCEMENT_PIPELINE"; ' +
+        'CETP scorecard → "OPEN_CETP_SCORECARD"; ' +
+        'sensor reading trend (with stationId) → "OPEN_TREND_LAB"; ' +
+        'VOC cluster data → "OPEN_VOC_CLUSTER_MONITOR"; ' +
+        'district criticality / heatmap → "OPEN_WAR_ROOM".',
+    },
   },
   required: ['chartType', 'title', 'series'],
 }
@@ -465,7 +477,7 @@ export const dataTools = [
     function: {
       name: 'renderChart',
       description:
-        'Render an inline chart in the chat panel. Call this whenever the user asks for trends, top-N rankings, breakdowns, or comparisons. NEVER fabricate data — always call a data query tool first to get real numbers, then call renderChart.',
+        'Render an inline chart in the chat panel. Call this whenever the user asks for trends, top-N rankings, breakdowns, or comparisons. NEVER fabricate data — always call a data query tool first to get real numbers, then call renderChart. ALWAYS set canvasHint to the matching canvas module so the "Open as canvas" button works.',
       parameters: renderChartSchema,
     },
   },

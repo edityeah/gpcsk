@@ -395,7 +395,7 @@ sensorsRouter.get('/stations/:id/health', requireAuth, async (req, res) => {
         entity:   'Inspection',
         entityId: newInspection.id,
         action:   'AUTO_SCHEDULED',
-        after:    newInspection as unknown as Record<string, unknown>,
+        after:    newInspection as unknown as import('@prisma/client').Prisma.InputJsonValue,
       })
 
       autoInspectionTriggered = true
