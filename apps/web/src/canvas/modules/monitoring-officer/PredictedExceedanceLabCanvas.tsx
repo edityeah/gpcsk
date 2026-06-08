@@ -3,8 +3,9 @@
  * Linear regression over the last 6 data points to project the next 24 hours.
  * Highlights where the projection crosses the norm.
  *
- * Uses /api/sensors/stations?type=OCEMS to list stations,
- * then /api/sensors/readings?stationId=&parameter=&since= for readings.
+ * Uses /api/sensors/stations?type=OCEMS to list stations.
+ * Prefers /api/sensors/stations/:id/readings for readings; falls back to
+ * /api/sensors/readings?stationId=&parameter=&since=
  */
 
 import { useState, useEffect, useCallback } from 'react'
@@ -181,13 +182,24 @@ export function PredictedExceedanceLabCanvas() {
     setLoading(true)
     try {
       const since = new Date(Date.now() - 7 * 24 * 3600_000).toISOString()
-      const res = await api<ApiReadingsResponse>(
-        `/api/sensors/readings?stationId=${stationId}&parameter=${encodeURIComponent(parameter)}&since=${since}`,
-        { token },
-      )
-      const raw: ApiReading[] = Array.isArray(res)
-        ? (res as unknown as ApiReading[])
-        : (res.readings ?? [])
+      let raw: ApiReading[] = []
+
+      // Try the per-station readings endpoint first
+      try {
+        const res = await api<ApiReadingsResponse>(
+          `/api/sensors/stations/${stationId}/readings?parameter=${encodeURIComponent(parameter)}&since=${since}`,
+          { token },
+        )
+        raw = Array.isArray(res) ? (res as unknown as ApiReading[]) : (res.readings ?? [])
+      } catch {
+        // Fall back to the generic readings endpoint
+        const res = await api<ApiReadingsResponse>(
+          `/api/sensors/readings?stationId=${stationId}&parameter=${encodeURIComponent(parameter)}&since=${since}`,
+          { token },
+        )
+        raw = Array.isArray(res) ? (res as unknown as ApiReading[]) : (res.readings ?? [])
+      }
+
       const sorted = [...raw].sort(
         (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
       )

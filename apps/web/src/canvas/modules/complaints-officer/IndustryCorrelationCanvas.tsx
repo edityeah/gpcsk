@@ -1,5 +1,6 @@
 // IndustryCorrelationCanvas — Complaints Officer
-// For a selected complaint, shows nearby industries from /api/industries (top risk).
+// For a selected complaint, shows correlated industries from /api/complaints/:id/correlation.
+// Falls back to /api/industries?category=RED if correlation endpoint unavailable.
 // Link complaint to industry via PATCH /api/complaints/:id
 
 import { useEffect, useState, useCallback } from 'react'
@@ -41,6 +42,17 @@ interface ApiIndustry {
 
 interface ApiIndustriesResponse {
   items: ApiIndustry[]
+}
+
+// Response shape from GET /api/complaints/:id/correlation
+interface ApiCorrelationIndustry extends ApiIndustry {
+  distanceKm: number
+  recentExceedances: number
+  openComplaints: number
+}
+
+interface ApiCorrelationResponse {
+  nearbyIndustries: ApiCorrelationIndustry[]
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -121,32 +133,48 @@ export function IndustryCorrelationCanvas() {
       .finally(() => setLoadingList(false))
   }, [token, showToast])
 
-  // Load industries sorted by risk (top 20 RED/ORANGE)
+  // Load industries — prefer real correlation endpoint, fall back to industries list
   const loadIndustries = useCallback(async (complaint: ApiComplaint) => {
     if (!token) return
     setLoadingInd(true)
     try {
-      const res = await api<ApiIndustriesResponse>(
-        '/api/industries?category=RED&limit=20',
-        { token },
-      )
-      let list: ApiIndustry[] = Array.isArray(res)
-        ? (res as unknown as ApiIndustry[])
-        : (res.items ?? [])
-
-      // Sort by distance to complaint if we have lat/lng
-      if (complaint.lat !== null && complaint.lng !== null) {
-        list = list
-          .filter(ind => ind.lat !== null && ind.lng !== null)
-          .sort((a, b) =>
-            distKm(complaint.lat!, complaint.lng!, a.lat!, a.lng!) -
-            distKm(complaint.lat!, complaint.lng!, b.lat!, b.lng!),
-          )
-          .slice(0, 10)
-      } else {
-        list = list.slice(0, 10)
+      // Try the real correlation endpoint first
+      let correlated: ApiIndustry[] | null = null
+      try {
+        const corrRes = await api<ApiCorrelationResponse>(
+          `/api/complaints/${complaint.id}/correlation`,
+          { token },
+        )
+        correlated = corrRes.nearbyIndustries ?? null
+      } catch {
+        // endpoint not available — fall back
       }
-      setIndustries(list)
+
+      if (correlated !== null) {
+        setIndustries(correlated)
+      } else {
+        // Fallback: RED industries sorted by distance
+        const res = await api<ApiIndustriesResponse>(
+          '/api/industries?category=RED&limit=20',
+          { token },
+        )
+        let list: ApiIndustry[] = Array.isArray(res)
+          ? (res as unknown as ApiIndustry[])
+          : (res.items ?? [])
+
+        if (complaint.lat !== null && complaint.lng !== null) {
+          list = list
+            .filter(ind => ind.lat !== null && ind.lng !== null)
+            .sort((a, b) =>
+              distKm(complaint.lat!, complaint.lng!, a.lat!, a.lng!) -
+              distKm(complaint.lat!, complaint.lng!, b.lat!, b.lng!),
+            )
+            .slice(0, 10)
+        } else {
+          list = list.slice(0, 10)
+        }
+        setIndustries(list)
+      }
     } catch {
       showToast({ kind: 'danger', text: 'Failed to load nearby industries.' })
       setIndustries([])
@@ -194,7 +222,7 @@ export function IndustryCorrelationCanvas() {
         </div>
         <div className="flex-1">
           <div className="text-[15px] font-bold text-txt-primary">Industry Correlation</div>
-          <div className="text-[11px] text-txt-secondary">Match complaints to nearby RED-category industries</div>
+          <div className="text-[11px] text-txt-secondary">Nearby industries ranked by exceedances &amp; complaints within 5 km</div>
         </div>
       </div>
 

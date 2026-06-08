@@ -817,6 +817,80 @@ statsRouter.get('/war-room', requireAuth, async (_req, res) => {
   })
 })
 
+// ── GET /api/stats/war-room/heatmap ─────────────────────────────────────────
+//
+// Returns criticality scores (0-100 composite) for all Gujarat districts.
+// criticality = clamp(0, 100, 4*criticalCount + 2*majorCount + 1*anomalyCount
+//                            + 0.5*openComplaints + 0.1*activeExceedances)
+// Districts with no signals return 0.
+
+statsRouter.get('/war-room/heatmap', requireAuth, async (_req, res) => {
+  const since30d = daysAgo(30)
+
+  const districtData = await prisma.$queryRaw<
+    Array<{
+      districtId: string
+      districtName: string
+      criticalCount: bigint
+      majorCount: bigint
+      anomalyCount: bigint
+      openComplaints: bigint
+      activeExceedances: bigint
+    }>
+  >`
+    SELECT
+      d.id                                                                             AS "districtId",
+      d.name                                                                           AS "districtName",
+      COALESCE(SUM(CASE WHEN ex.severity::text = 'CRITICAL' AND ex."dispositionState"::text = 'PENDING'
+                        AND ex."detectedAt" >= ${since30d} THEN 1 ELSE 0 END), 0)::bigint AS "criticalCount",
+      COALESCE(SUM(CASE WHEN ex.severity::text = 'MAJOR'    AND ex."dispositionState"::text = 'PENDING'
+                        AND ex."detectedAt" >= ${since30d} THEN 1 ELSE 0 END), 0)::bigint AS "majorCount",
+      COALESCE(SUM(CASE WHEN ex.severity::text = 'MINOR'    AND ex."dispositionState"::text = 'PENDING'
+                        AND ex."detectedAt" >= ${since30d} THEN 1 ELSE 0 END), 0)::bigint AS "anomalyCount",
+      COALESCE((
+        SELECT COUNT(*) FROM "Complaint" c
+        JOIN "Industry" ci ON ci.id = c."industryId"
+        WHERE ci."districtId" = d.id
+          AND c.state::text NOT IN ('RESOLVED', 'CLOSED')
+      ), 0)::bigint AS "openComplaints",
+      COALESCE(SUM(CASE WHEN ex."dispositionState"::text = 'PENDING'
+                        AND ex."detectedAt" >= ${since30d} THEN 1 ELSE 0 END), 0)::bigint AS "activeExceedances"
+    FROM "District" d
+    LEFT JOIN "Industry" i   ON i."districtId"  = d.id
+    LEFT JOIN "MonitoringStation" ms ON ms."industryId" = i.id
+    LEFT JOIN "Exceedance" ex ON ex."stationId" = ms.id
+    GROUP BY d.id, d.name
+    ORDER BY d.name
+  `
+
+  const districts = districtData.map(r => {
+    const criticalCount      = Number(r.criticalCount)
+    const majorCount         = Number(r.majorCount)
+    const anomalyCount       = Number(r.anomalyCount)
+    const openComplaints     = Number(r.openComplaints)
+    const activeExceedances  = Number(r.activeExceedances)
+
+    const raw = 4 * criticalCount + 2 * majorCount + anomalyCount
+              + 0.5 * openComplaints + 0.1 * activeExceedances
+    const criticality = clamp(0, 100, Math.round(raw * 10) / 10)
+
+    return {
+      districtId:   r.districtId,
+      districtName: r.districtName,
+      criticality,
+      breakdown: {
+        criticalCount,
+        majorCount,
+        anomalyCount,
+        openComplaints,
+        activeExceedances,
+      },
+    }
+  })
+
+  res.json({ districts, generatedAt: new Date() })
+})
+
 statsRouter.get('/festival-monitoring', requireAuth, async (_req, res) => {
   // Find Sabarmati-related stations (MINARS / GEMS / AAQM near Ahmedabad)
   const sabarmatiStations = await prisma.monitoringStation.findMany({

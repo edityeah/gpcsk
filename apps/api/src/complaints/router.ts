@@ -204,6 +204,139 @@ complaintsRouter.get('/hotspots', requireAuth, async (_req, res) => {
   return res.json(hotspots)
 })
 
+// ── GET /api/complaints/triage-stats ──────────────────────────────────────
+// Aggregates for the last 7d and 30d, grouped by category/severity/channel/state.
+
+complaintsRouter.get('/triage-stats', requireAuth, async (_req, res) => {
+  const now = new Date()
+  const since7d  = new Date(now.getTime() - 7  * 24 * 3_600_000)
+  const since30d = new Date(now.getTime() - 30 * 24 * 3_600_000)
+
+  const [
+    totalLast7d,
+    totalLast30d,
+    byCategory,
+    bySeverity,
+    byChannel,
+    byState,
+  ] = await Promise.all([
+    prisma.complaint.count({ where: { receivedAt: { gte: since7d  } } }),
+    prisma.complaint.count({ where: { receivedAt: { gte: since30d } } }),
+    prisma.complaint.groupBy({
+      by: ['category'],
+      _count: { id: true },
+      where: { receivedAt: { gte: since30d } },
+      orderBy: { _count: { id: 'desc' } },
+    }),
+    prisma.complaint.groupBy({
+      by: ['severity'],
+      _count: { id: true },
+      where: { receivedAt: { gte: since30d } },
+      orderBy: { _count: { id: 'desc' } },
+    }),
+    prisma.complaint.groupBy({
+      by: ['channel'],
+      _count: { id: true },
+      where: { receivedAt: { gte: since30d } },
+      orderBy: { _count: { id: 'desc' } },
+    }),
+    prisma.complaint.groupBy({
+      by: ['state'],
+      _count: { id: true },
+      where: { receivedAt: { gte: since30d } },
+      orderBy: { _count: { id: 'desc' } },
+    }),
+  ])
+
+  return res.json({
+    totalLast7d,
+    totalLast30d,
+    byCategory: byCategory.map(r => ({ category: r.category, count: r._count.id })),
+    bySeverity: bySeverity.map(r => ({ severity: r.severity, count: r._count.id })),
+    byChannel:  byChannel.map( r => ({ channel: r.channel,   count: r._count.id })),
+    byState:    byState.map(   r => ({ state: r.state,       count: r._count.id })),
+  })
+})
+
+// ── GET /api/complaints/:id/correlation ───────────────────────────────────
+// For one complaint, return industries within 5 km sorted by distance asc.
+
+complaintsRouter.get('/:id/correlation', requireAuth, async (req, res) => {
+  const complaint = await prisma.complaint.findUnique({
+    where: { id: req.params['id'] },
+    select: { id: true, lat: true, lng: true },
+  })
+  if (!complaint) return res.status(404).json({ error: 'complaint_not_found' })
+
+  const lat = complaint.lat
+  const lng = complaint.lng
+
+  if (lat == null || lng == null) {
+    return res.json({ nearbyIndustries: [] })
+  }
+
+  // Bounding box: 5 km ≈ 0.045 degrees latitude
+  const DELTA = 0.05
+  const since30d = new Date(Date.now() - 30 * 24 * 3_600_000)
+
+  const industries = await prisma.industry.findMany({
+    where: {
+      lat: { gte: lat - DELTA, lte: lat + DELTA },
+      lng: { gte: lng - DELTA, lte: lng + DELTA },
+    },
+    select: {
+      id:       true,
+      name:     true,
+      category: true,
+      lat:      true,
+      lng:      true,
+      sector:   { select: { name: true } },
+      district: { select: { name: true } },
+    },
+    take: 50,
+  })
+
+  const withDist = industries
+    .filter(i => i.lat != null && i.lng != null)
+    .map(i => ({
+      ...i,
+      distanceKm: haversineKm(lat, lng, i.lat!, i.lng!),
+    }))
+    .filter(i => i.distanceKm <= 5)
+    .sort((a, b) => a.distanceKm - b.distanceKm)
+    .slice(0, 8)
+
+  const enriched = await Promise.all(
+    withDist.map(async i => {
+      const [exceedanceCount, complaintCount] = await Promise.all([
+        prisma.exceedance.count({
+          where: {
+            station:    { industryId: i.id },
+            detectedAt: { gte: since30d },
+          },
+        }),
+        prisma.complaint.count({
+          where: {
+            industryId: i.id,
+            receivedAt: { gte: since30d },
+          },
+        }),
+      ])
+      return {
+        id:                        i.id,
+        name:                      i.name,
+        distanceKm:                Math.round(i.distanceKm * 10) / 10,
+        sector:                    i.sector?.name ?? null,
+        category:                  i.category,
+        recentExceedanceCount30d:  exceedanceCount,
+        openComplaintCount30d:     complaintCount,
+      }
+    }),
+  )
+
+  return res.json({ nearbyIndustries: enriched })
+})
+
 // ── GET /api/complaints/:id ────────────────────────────────────────────────
 
 complaintsRouter.get('/:id', requireAuth, async (req, res) => {

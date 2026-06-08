@@ -415,3 +415,89 @@ describe('GET /api/complaints/hotspots', () => {
     expect(res.status).toBe(401)
   })
 })
+
+// ── GET /api/complaints/triage-stats ────────────────────────────────────────
+
+describe('GET /api/complaints/triage-stats', () => {
+  beforeEach(async () => {
+    await prisma.complaint.createMany({
+      data: [
+        { channel: 'WEB',   complainant: { name: 'T1' }, description: 'Air pollution from chimney near factory', category: 'AIR_POLLUTION',  severity: 'MINOR',  state: 'NEW' },
+        { channel: 'PHONE', complainant: { name: 'T2' }, description: 'Water effluent discharge into drain',      category: 'WATER_POLLUTION', severity: 'MAJOR',  state: 'ASSIGNED' },
+        { channel: 'EMAIL', complainant: { name: 'T3' }, description: 'Hazardous waste dumped near drain illegal', category: 'HAZARDOUS_WASTE', severity: 'CRITICAL', state: 'RESOLVED' },
+      ],
+    })
+  })
+
+  it('requires auth', async () => {
+    const res = await request(app).get('/api/complaints/triage-stats')
+    expect(res.status).toBe(401)
+  })
+
+  it('returns triage stats shape', async () => {
+    const res = await request(app)
+      .get('/api/complaints/triage-stats')
+      .set('Authorization', `Bearer ${complaintsOfficerToken}`)
+    expect(res.status).toBe(200)
+    expect(typeof res.body.totalLast7d).toBe('number')
+    expect(typeof res.body.totalLast30d).toBe('number')
+    expect(Array.isArray(res.body.byCategory)).toBe(true)
+    expect(Array.isArray(res.body.bySeverity)).toBe(true)
+    expect(Array.isArray(res.body.byChannel)).toBe(true)
+    expect(Array.isArray(res.body.byState)).toBe(true)
+    if (res.body.byCategory.length > 0) {
+      expect(res.body.byCategory[0]).toHaveProperty('category')
+      expect(res.body.byCategory[0]).toHaveProperty('count')
+    }
+  })
+})
+
+// ── GET /api/complaints/:id/correlation ─────────────────────────────────────
+
+describe('GET /api/complaints/:id/correlation', () => {
+  let correlationComplaintId: string
+
+  // Re-create the complaint before each test because the outer beforeEach
+  // calls prisma.complaint.deleteMany() to reset state.
+  beforeEach(async () => {
+    const c = await prisma.complaint.create({
+      data: {
+        channel:     'WEB',
+        complainant: { name: 'Corr Test User' },
+        lat:          23.0,
+        lng:          72.5,
+        description: 'Test complaint for correlation test near lat 23.0',
+        category:    'AIR_POLLUTION',
+        severity:    'MINOR',
+      },
+    })
+    correlationComplaintId = c.id
+  })
+
+  it('requires auth', async () => {
+    const res = await request(app).get(`/api/complaints/${correlationComplaintId}/correlation`)
+    expect(res.status).toBe(401)
+  })
+
+  it('returns correlation shape', async () => {
+    const res = await request(app)
+      .get(`/api/complaints/${correlationComplaintId}/correlation`)
+      .set('Authorization', `Bearer ${complaintsOfficerToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('nearbyIndustries')
+    expect(Array.isArray(res.body.nearbyIndustries)).toBe(true)
+    if (res.body.nearbyIndustries.length > 0) {
+      const first = res.body.nearbyIndustries[0]
+      expect(first).toHaveProperty('id')
+      expect(first).toHaveProperty('name')
+      expect(first).toHaveProperty('distanceKm')
+    }
+  })
+
+  it('returns 404 for unknown complaint', async () => {
+    const res = await request(app)
+      .get('/api/complaints/nonexistent-id-xyz/correlation')
+      .set('Authorization', `Bearer ${complaintsOfficerToken}`)
+    expect(res.status).toBe(404)
+  })
+})
