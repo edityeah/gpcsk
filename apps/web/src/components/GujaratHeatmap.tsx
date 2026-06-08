@@ -1,15 +1,15 @@
 /**
- * GujaratHeatmap — 7×7 geo-grid of Gujarat districts coloured by criticality score.
+ * GujaratHeatmap — Real geographic map of Gujarat districts using Leaflet + OpenStreetMap.
  *
- * The grid maps rows (0=north) and columns (0=west) to approximate district positions
- * within Gujarat state. Each cell shows a 2-3 letter abbreviation and is coloured from
- * green (0) → yellow → orange → red (100).
+ * Replaces the previous 7×7 grid with actual lat/lng centroids and CircleMarkers
+ * sized + coloured by criticality score.
  *
  * Data source: GET /api/stats/war-room/heatmap
  *   { districts: [{ districtId, districtName, criticality, breakdown }], generatedAt }
  */
 
 import { useEffect, useState, useCallback } from 'react'
+import { MapContainer, TileLayer, CircleMarker, Tooltip } from 'react-leaflet'
 import { RefreshCw } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { useAuth } from '../context/AuthContext.js'
@@ -36,82 +36,125 @@ interface HeatmapResponse {
   generatedAt: string
 }
 
-// ─── Geo-grid layout ──────────────────────────────────────────────────────────
-// [row, col] within a 7×7 grid. Row 0 = north, col 0 = west.
-// Source: approximate geographic centroids mapped to 7×7 grid cells.
+// ─── District centroids ────────────────────────────────────────────────────────
+// All 33 Gujarat districts with canonical lat/lng centroids.
 
-const DISTRICT_GRID: Array<{ abbr: string; full: string; row: number; col: number }> = [
-  // North row
-  { abbr: 'BNK', full: 'Banaskantha',   row: 0, col: 1 },
-  { abbr: 'PAN', full: 'Patan',         row: 0, col: 2 },
-  { abbr: 'MEH', full: 'Mehsana',       row: 0, col: 3 },
-  { abbr: 'SAB', full: 'Sabarkantha',   row: 0, col: 4 },
-  { abbr: 'ARV', full: 'Arvalli',       row: 0, col: 5 },
-  // Kutch + Morbi / Surendranagar row
-  { abbr: 'KCH', full: 'Kutch',         row: 1, col: 0 },
-  { abbr: 'MOR', full: 'Morbi',         row: 1, col: 2 },
-  { abbr: 'SRD', full: 'Surendranagar', row: 1, col: 3 },
-  { abbr: 'GDH', full: 'Gandhinagar',   row: 1, col: 4 },
-  { abbr: 'AHM', full: 'Ahmedabad',     row: 1, col: 5 },
-  { abbr: 'KHD', full: 'Kheda',         row: 1, col: 6 },
-  // Rajkot / Anand row
-  { abbr: 'RAJ', full: 'Rajkot',        row: 2, col: 1 },
-  { abbr: 'BOT', full: 'Botad',         row: 2, col: 2 },
-  { abbr: 'AND', full: 'Anand',         row: 2, col: 5 },
-  { abbr: 'PNC', full: 'Panchmahal',    row: 2, col: 6 },
-  // Jamnagar / Bhavnagar row
-  { abbr: 'JAM', full: 'Jamnagar',      row: 3, col: 0 },
-  { abbr: 'DWK', full: 'Dwarka',        row: 3, col: 1 },
-  { abbr: 'BHV', full: 'Bhavnagar',     row: 3, col: 3 },
-  { abbr: 'VDO', full: 'Vadodara',      row: 3, col: 5 },
-  { abbr: 'DAH', full: 'Dahod',         row: 3, col: 6 },
-  // Porbandar / Amreli row
-  { abbr: 'PRB', full: 'Porbandar',     row: 4, col: 0 },
-  { abbr: 'AMR', full: 'Amreli',        row: 4, col: 2 },
-  { abbr: 'NRM', full: 'Narmada',       row: 4, col: 4 },
-  { abbr: 'CHH', full: 'Chhota Udaipur',row: 4, col: 5 },
-  // Junagadh / Gir / Bharuch row
-  { abbr: 'JNG', full: 'Junagadh',      row: 5, col: 1 },
-  { abbr: 'GIR', full: 'Gir Somnath',   row: 5, col: 2 },
-  { abbr: 'BHR', full: 'Bharuch',       row: 5, col: 4 },
-  { abbr: 'NVS', full: 'Nvsari',        row: 5, col: 5 },
-  { abbr: 'TAP', full: 'Tapi',          row: 5, col: 6 },
-  // South row
-  { abbr: 'SOM', full: 'Somnath',       row: 6, col: 2 },
-  { abbr: 'SRT', full: 'Surat',         row: 6, col: 4 },
-  { abbr: 'VLS', full: 'Valsad',        row: 6, col: 5 },
-  { abbr: 'DNG', full: 'Dang',          row: 6, col: 6 },
+interface DistrictCentroid {
+  lat: number
+  lng: number
+  name: string
+}
+
+const DISTRICT_CENTROIDS: DistrictCentroid[] = [
+  { name: 'Ahmedabad',        lat: 23.0225, lng: 72.5714 },
+  { name: 'Amreli',           lat: 21.6010, lng: 71.2204 },
+  { name: 'Anand',            lat: 22.5645, lng: 72.9289 },
+  { name: 'Aravalli',         lat: 23.5670, lng: 73.0270 },
+  { name: 'Banaskantha',      lat: 24.1719, lng: 72.4380 },
+  { name: 'Bharuch',          lat: 21.7051, lng: 72.9959 },
+  { name: 'Bhavnagar',        lat: 21.7645, lng: 72.1519 },
+  { name: 'Botad',            lat: 22.1704, lng: 71.6685 },
+  { name: 'Chhota Udaipur',   lat: 22.3000, lng: 74.0167 },
+  { name: 'Dahod',            lat: 22.8351, lng: 74.2616 },
+  { name: 'Dang',             lat: 20.7549, lng: 73.6868 },
+  { name: 'Devbhoomi Dwarka', lat: 22.2394, lng: 68.9678 },
+  { name: 'Gandhinagar',      lat: 23.2156, lng: 72.6369 },
+  { name: 'Gir Somnath',      lat: 20.9159, lng: 70.3629 },
+  { name: 'Jamnagar',         lat: 22.4707, lng: 70.0577 },
+  { name: 'Junagadh',         lat: 21.5222, lng: 70.4579 },
+  { name: 'Kheda',            lat: 22.7510, lng: 72.6850 },
+  { name: 'Kutch',            lat: 23.7337, lng: 69.8597 },
+  { name: 'Mahisagar',        lat: 23.0118, lng: 73.5520 },
+  { name: 'Mehsana',          lat: 23.5879, lng: 72.3693 },
+  { name: 'Morbi',            lat: 22.8170, lng: 70.8378 },
+  { name: 'Narmada',          lat: 21.8700, lng: 73.5000 },
+  { name: 'Navsari',          lat: 20.9467, lng: 72.9520 },
+  { name: 'Panchmahal',       lat: 22.7790, lng: 73.6143 },
+  { name: 'Patan',            lat: 23.8493, lng: 72.1266 },
+  { name: 'Porbandar',        lat: 21.6417, lng: 69.6293 },
+  { name: 'Rajkot',           lat: 22.3039, lng: 70.8022 },
+  { name: 'Sabarkantha',      lat: 23.5970, lng: 73.0117 },
+  { name: 'Surat',            lat: 21.1702, lng: 72.8311 },
+  { name: 'Surendranagar',    lat: 22.7300, lng: 71.6300 },
+  { name: 'Tapi',             lat: 21.1153, lng: 73.4101 },
+  { name: 'Vadodara',         lat: 22.3072, lng: 73.1812 },
+  { name: 'Valsad',           lat: 20.6101, lng: 72.9342 },
 ]
 
-// ─── Criticality → colour ─────────────────────────────────────────────────────
-
-function criticalityToColor(score: number): { bg: string; text: string; ring: string } {
-  if (score >= 70) return { bg: 'bg-red-500',    text: 'text-white',          ring: 'ring-red-700' }
-  if (score >= 50) return { bg: 'bg-orange-400', text: 'text-white',          ring: 'ring-orange-600' }
-  if (score >= 30) return { bg: 'bg-amber-300',  text: 'text-amber-900',      ring: 'ring-amber-500' }
-  if (score >= 10) return { bg: 'bg-yellow-200', text: 'text-yellow-900',     ring: 'ring-yellow-400' }
-  return                   { bg: 'bg-emerald-100', text: 'text-emerald-800',  ring: 'ring-emerald-300' }
+/**
+ * Normalise a district name for fuzzy matching.
+ * Lower-cases, strips spaces, and maps common aliases so "Kutch"/"Kachchh",
+ * "Dwarka"/"Devbhoomi Dwarka", etc. all resolve correctly.
+ */
+function normaliseDistrictName(name: string): string {
+  const n = name.toLowerCase().replace(/\s+/g, '')
+  // Canonical alias map
+  const aliases: Record<string, string> = {
+    kachchh: 'kutch',
+    dwarka: 'devbhoomidwarka',
+    devbhoomidwarka: 'devbhoomidwarka',
+    girnationalpark: 'girsomnath',
+    chhhotaudaipur: 'chhotaudaipur',
+    chhotaudaipur: 'chhotaudaipur',
+  }
+  return aliases[n] ?? n
 }
 
-// ─── Tooltip ─────────────────────────────────────────────────────────────────
-
-interface TooltipProps {
-  district: DistrictScore
+// Pre-build a lookup map: normalised name → centroid
+const CENTROID_MAP = new Map<string, DistrictCentroid>()
+for (const c of DISTRICT_CENTROIDS) {
+  CENTROID_MAP.set(normaliseDistrictName(c.name), c)
 }
 
-function DistrictTooltip({ district }: TooltipProps) {
-  const b = district.breakdown
+// ─── Visual helpers ────────────────────────────────────────────────────────────
+
+function radiusFor(criticality: number): number {
+  return 10 + criticality * 0.4
+}
+
+function colorFor(criticality: number): string {
+  if (criticality === 0) return '#94A3B8'   // slate-400 — muted / no data
+  if (criticality <= 25)  return '#10B981'  // emerald-500
+  if (criticality <= 50)  return '#F59E0B'  // amber-500
+  if (criticality <= 75)  return '#EF4444'  // red-500
+  return '#B91C1C'                           // red-700 — severe
+}
+
+// ─── Legend ────────────────────────────────────────────────────────────────────
+
+function MapLegend() {
+  const items = [
+    { color: '#94A3B8', label: 'No data' },
+    { color: '#10B981', label: '1–25' },
+    { color: '#F59E0B', label: '26–50' },
+    { color: '#EF4444', label: '51–75' },
+    { color: '#B91C1C', label: '76+' },
+  ]
   return (
-    <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 bg-white rounded-xl border border-bdr shadow-modal p-3 pointer-events-none">
-      <div className="text-[12px] font-bold text-txt-primary mb-1">{district.districtName}</div>
-      <div className="text-[11px] text-danger font-semibold">Criticality: {Math.round(district.criticality)}</div>
-      <div className="mt-1.5 space-y-0.5 text-[11px] text-txt-secondary">
-        <div>Critical alerts: {b.criticalCount}</div>
-        <div>Major alerts: {b.majorCount}</div>
-        <div>Anomalies: {b.anomalyCount}</div>
-        <div>Open complaints: {b.openComplaints}</div>
-        <div>Active exceedances: {b.activeExceedances}</div>
+    <div
+      style={{
+        position: 'absolute',
+        bottom: 24,
+        right: 12,
+        zIndex: 1000,
+        background: 'rgba(255,255,255,0.92)',
+        border: '1px solid #e2e8f0',
+        borderRadius: 10,
+        padding: '8px 12px',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
+        fontFamily: 'Montserrat, sans-serif',
+        pointerEvents: 'none',
+      }}
+    >
+      <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 2, textTransform: 'uppercase', color: '#94A3B8', marginBottom: 6 }}>
+        Criticality
       </div>
+      {items.map(({ color, label }) => (
+        <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+          <div style={{ width: 12, height: 12, borderRadius: '50%', background: color, flexShrink: 0 }} />
+          <span style={{ fontSize: 10, color: '#475569' }}>{label}</span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -123,14 +166,19 @@ interface GujaratHeatmapProps {
   scoreMap?: Map<string, DistrictScore>
   /** Show loading state */
   externalLoading?: boolean
+  /** Called when user clicks a district marker */
+  onDistrictClick?: (districtId: string) => void
 }
 
-export function GujaratHeatmap({ scoreMap: externalMap, externalLoading }: GujaratHeatmapProps = {}) {
+export function GujaratHeatmap({ scoreMap: externalMap, externalLoading, onDistrictClick }: GujaratHeatmapProps = {}) {
   const { token } = useAuth()
   const [scores, setScores] = useState<Map<string, DistrictScore>>(new Map())
   const [loading, setLoading] = useState(true)
-  const [hoveredDistrict, setHoveredDistrict] = useState<string | null>(null)
   const [generatedAt, setGeneratedAt] = useState<string | null>(null)
+  // SSR-safety: only mount MapContainer after first client render
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => { setMounted(true) }, [])
 
   const load = useCallback(async () => {
     if (!token) return
@@ -139,14 +187,13 @@ export function GujaratHeatmap({ scoreMap: externalMap, externalLoading }: Gujar
       const res = await api<HeatmapResponse>('/api/stats/war-room/heatmap', { token })
       const map = new Map<string, DistrictScore>()
       for (const d of res.districts) {
-        // Index by both districtId and districtName (lowercase) for fuzzy lookup
-        map.set(d.districtName.toLowerCase(), d)
+        map.set(normaliseDistrictName(d.districtName), d)
         map.set(d.districtId, d)
       }
       setScores(map)
       setGeneratedAt(res.generatedAt)
     } catch {
-      // Silently fail — show empty heatmap
+      // Silently fail — show empty heatmap (circles at 0 / grey)
     } finally {
       setLoading(false)
     }
@@ -162,14 +209,6 @@ export function GujaratHeatmap({ scoreMap: externalMap, externalLoading }: Gujar
   }, [externalMap, load])
 
   const activeLoading = externalLoading ?? loading
-
-  // Build 7×7 grid with undefined cells for empty positions
-  const grid: Array<Array<typeof DISTRICT_GRID[0] | null>> = Array.from({ length: 7 }, () =>
-    Array.from({ length: 7 }, () => null),
-  )
-  for (const d of DISTRICT_GRID) {
-    grid[d.row]![d.col] = d
-  }
 
   return (
     <div className="bg-white rounded-2xl border border-bdr-light shadow-card p-4">
@@ -188,72 +227,107 @@ export function GujaratHeatmap({ scoreMap: externalMap, externalLoading }: Gujar
         {activeLoading && <RefreshCw className="w-3.5 h-3.5 text-txt-tertiary animate-spin" />}
       </div>
 
-      {/* Grid */}
-      <div className="flex flex-col gap-1">
-        {grid.map((row, rowIdx) => (
-          <div key={rowIdx} className="flex gap-1">
-            {row.map((cell, colIdx) => {
-              if (!cell) {
-                return <div key={colIdx} className="flex-1 aspect-square" />
-              }
+      {/* Map container */}
+      <div style={{ height: 500, width: '100%', borderRadius: 12, overflow: 'hidden', position: 'relative' }}>
+        {mounted && (
+          <MapContainer
+            center={[22.5, 71.5]}
+            zoom={7}
+            scrollWheelZoom={false}
+            style={{ height: '100%', width: '100%' }}
+            attributionControl={true}
+          >
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
 
-              // Look up score
-              const score = scores.get(cell.full.toLowerCase()) ?? scores.get(cell.abbr.toLowerCase())
+            {DISTRICT_CENTROIDS.map((centroid) => {
+              const key = normaliseDistrictName(centroid.name)
+              const score = scores.get(key)
               const criticality = score?.criticality ?? 0
-              const colors = criticalityToColor(criticality)
-              const isHovered = hoveredDistrict === cell.full
+              const color = colorFor(criticality)
+              const radius = radiusFor(criticality)
+              const b = score?.breakdown
 
               return (
-                <div
-                  key={colIdx}
-                  className="flex-1 aspect-square relative"
-                  onMouseEnter={() => setHoveredDistrict(cell.full)}
-                  onMouseLeave={() => setHoveredDistrict(null)}
+                <CircleMarker
+                  key={centroid.name}
+                  center={[centroid.lat, centroid.lng]}
+                  radius={radius}
+                  pathOptions={{
+                    fillColor: color,
+                    color: color,
+                    fillOpacity: 0.65,
+                    weight: 2,
+                  }}
+                  eventHandlers={{
+                    click: () => {
+                      if (score && onDistrictClick) {
+                        onDistrictClick(score.districtId)
+                      }
+                    },
+                  }}
                 >
-                  <div
-                    className={`
-                      w-full h-full rounded-lg flex flex-col items-center justify-center cursor-default
-                      transition-all duration-200 select-none
-                      ${colors.bg} ${colors.text}
-                      ${isHovered ? `ring-2 ${colors.ring} scale-110 z-10` : ''}
-                    `}
+                  <Tooltip
+                    direction="top"
+                    offset={[0, -radius]}
+                    opacity={1}
                   >
-                    <div className="text-[9px] font-black leading-tight text-center px-0.5 truncate w-full text-center">
-                      {cell.abbr}
-                    </div>
-                    {score && (
-                      <div className="text-[8px] font-semibold opacity-80">
-                        {Math.round(criticality)}
+                    <div style={{ fontFamily: 'Montserrat, sans-serif', minWidth: 160 }}>
+                      <div style={{ fontWeight: 900, fontSize: 12, marginBottom: 2 }}>{centroid.name}</div>
+                      <div style={{ fontSize: 11, color: criticality > 50 ? '#EF4444' : criticality > 25 ? '#F59E0B' : '#10B981', fontWeight: 700, marginBottom: 4 }}>
+                        Criticality: {Math.round(criticality)}
                       </div>
-                    )}
-                  </div>
+                      {b && (
+                        <div style={{ fontSize: 10, color: '#64748B', lineHeight: 1.6 }}>
+                          <div>Critical: {b.criticalCount} &nbsp; Major: {b.majorCount}</div>
+                          <div>Anomalies: {b.anomalyCount}</div>
+                          <div>Complaints: {b.openComplaints} &nbsp; Exceedances: {b.activeExceedances}</div>
+                        </div>
+                      )}
+                    </div>
+                  </Tooltip>
 
-                  {/* Tooltip */}
-                  {isHovered && score && (
-                    <DistrictTooltip district={score} />
+                  {/* Permanent district name label — only for high-criticality districts to reduce clutter */}
+                  {criticality >= 20 && (
+                    <Tooltip
+                      permanent
+                      direction="center"
+                      opacity={0.9}
+                      className="leaflet-district-label"
+                    >
+                      <span style={{ fontSize: 9, fontWeight: 700, fontFamily: 'Montserrat, sans-serif', whiteSpace: 'nowrap' }}>
+                        {centroid.name}
+                      </span>
+                    </Tooltip>
                   )}
-                </div>
+                </CircleMarker>
               )
             })}
-          </div>
-        ))}
-      </div>
+          </MapContainer>
+        )}
 
-      {/* Legend */}
-      <div className="mt-3 flex items-center gap-2 flex-wrap">
-        <div className="text-[9px] font-bold uppercase tracking-widest text-txt-tertiary mr-1">Criticality</div>
-        {[
-          { label: '<10',  bg: 'bg-emerald-100' },
-          { label: '10–30', bg: 'bg-yellow-200' },
-          { label: '30–50', bg: 'bg-amber-300' },
-          { label: '50–70', bg: 'bg-orange-400' },
-          { label: '70+',   bg: 'bg-red-500' },
-        ].map(({ label, bg }) => (
-          <div key={label} className="flex items-center gap-1">
-            <div className={`w-3 h-3 rounded-sm ${bg}`} />
-            <span className="text-[9px] text-txt-tertiary">{label}</span>
+        {/* Legend — absolutely positioned over the map */}
+        {mounted && <MapLegend />}
+
+        {/* Loading overlay */}
+        {activeLoading && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(255,255,255,0.55)',
+              zIndex: 2000,
+              borderRadius: 12,
+            }}
+          >
+            <RefreshCw className="w-6 h-6 text-txt-tertiary animate-spin" />
           </div>
-        ))}
+        )}
       </div>
     </div>
   )
