@@ -1,6 +1,6 @@
 /**
  * VocClusterMonitorCanvas — table of VOC clusters with current readings vs CPCB limits.
- * Uses /api/sensors/stations/latest?type=VOC (same pattern as OcemsLiveGridCanvas).
+ * Prefers /api/sensors/voc-clusters; falls back to /api/sensors/stations/latest?type=VOC.
  */
 
 import { useState, useEffect, useCallback } from 'react'
@@ -105,13 +105,20 @@ export function VocClusterMonitorCanvas() {
     if (!token) return
     setLoading(true)
     try {
-      const res = await api<ApiResponse | ApiVocStation[]>(
-        '/api/sensors/stations/latest?type=VOC',
-        { token },
-      )
-      const raw: ApiVocStation[] = Array.isArray(res)
-        ? (res as ApiVocStation[])
-        : ((res as ApiResponse).stations ?? [])
+      // Prefer the dedicated VOC clusters endpoint; fall back to stations/latest
+      let raw: ApiVocStation[] = []
+      try {
+        const res = await api<ApiResponse | ApiVocStation[]>('/api/sensors/voc-clusters', { token })
+        raw = Array.isArray(res) ? (res as ApiVocStation[]) : ((res as ApiResponse).stations ?? [])
+      } catch {
+        const res = await api<ApiResponse | ApiVocStation[]>(
+          '/api/sensors/stations/latest?type=VOC',
+          { token },
+        )
+        raw = Array.isArray(res)
+          ? (res as ApiVocStation[])
+          : ((res as ApiResponse).stations ?? [])
+      }
 
       const mapped: VocCluster[] = raw.map(s => ({
         id: s.id,

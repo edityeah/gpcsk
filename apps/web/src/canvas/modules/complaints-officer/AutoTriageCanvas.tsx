@@ -1,6 +1,6 @@
 // AutoTriageCanvas — Complaints Officer
 // Donut of complaint categories + bar of severity + last-7-day intake.
-// Builds analytics from /api/complaints?limit=200 since triage-stats endpoint is not available.
+// Prefers /api/complaints/triage-stats; falls back to /api/complaints?limit=200.
 
 import { useEffect, useState, useCallback } from 'react'
 import {
@@ -19,7 +19,7 @@ import { api } from '../../../lib/api.js'
 import { useAuth } from '../../../context/AuthContext.js'
 import { useApp } from '../../../context/AppContext.js'
 
-// ─── Real API complaint shape ──────────────────────────────────────────────────
+// ─── Real API shapes ──────────────────────────────────────────────────────────
 
 interface ApiComplaint {
   id: string
@@ -29,6 +29,16 @@ interface ApiComplaint {
   severity: string       // 'MINOR' | 'MAJOR' | 'CRITICAL'
   state: string          // 'NEW' | 'ASSIGNED' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'
   description: string
+}
+
+// Response shape from GET /api/complaints/triage-stats
+interface ApiTriageStats {
+  totalLast7d: number
+  totalLast30d: number
+  byCategory: Array<{ category: string; _count: { id: number } }>
+  bySeverity: Array<{ severity: string; _count: { id: number } }>
+  byChannel:  Array<{ channel:  string; _count: { id: number } }>
+  byState:    Array<{ state:    string; _count: { id: number } }>
 }
 
 // ─── Internal stats shape ─────────────────────────────────────────────────────
@@ -173,16 +183,53 @@ export function AutoTriageCanvas() {
     if (!token) return
     setLoading(true)
     try {
-      const res = await api<ApiComplaint[] | { complaints?: ApiComplaint[]; data?: ApiComplaint[] }>(
-        '/api/complaints?limit=200',
-        { token },
-      )
-      const complaints: ApiComplaint[] = Array.isArray(res)
-        ? (res as ApiComplaint[])
-        : ((res as { complaints?: ApiComplaint[]; data?: ApiComplaint[] }).complaints
-          ?? (res as { data?: ApiComplaint[] }).data
-          ?? [])
-      setStats(buildStats(complaints))
+      // Try the real triage-stats endpoint first
+      let triageRes: ApiTriageStats | null = null
+      try {
+        triageRes = await api<ApiTriageStats>('/api/complaints/triage-stats', { token })
+      } catch {
+        // endpoint not yet available — fall through to list-based fallback
+      }
+
+      if (triageRes) {
+        // Map server-side aggregates directly into TriageStats
+        const categoryBreakdown = triageRes.byCategory.map(row => ({
+          category: CATEGORY_LABEL[row.category] ?? row.category.replace(/_/g, ' '),
+          count: row._count.id,
+        })).sort((a, b) => b.count - a.count)
+
+        const severityBreakdown = triageRes.bySeverity
+          .map(row => ({ severity: SEVERITY_LABEL[row.severity] ?? row.severity, count: row._count.id }))
+          .filter(s => s.count > 0)
+
+        const resolvedCount = triageRes.byState
+          .filter(r => r.state === 'RESOLVED' || r.state === 'CLOSED')
+          .reduce((acc, r) => acc + r._count.id, 0)
+        const openCount = triageRes.byState
+          .filter(r => r.state !== 'RESOLVED' && r.state !== 'CLOSED')
+          .reduce((acc, r) => acc + r._count.id, 0)
+
+        setStats({
+          categoryBreakdown,
+          severityBreakdown,
+          last7Days: [],          // not in triage-stats response
+          totalOpen: openCount,
+          totalResolved: resolvedCount,
+          avgResolutionDays: 0,
+        })
+      } else {
+        // Fallback: derive stats from complaint list
+        const res = await api<ApiComplaint[] | { complaints?: ApiComplaint[]; data?: ApiComplaint[] }>(
+          '/api/complaints?limit=200',
+          { token },
+        )
+        const complaints: ApiComplaint[] = Array.isArray(res)
+          ? (res as ApiComplaint[])
+          : ((res as { complaints?: ApiComplaint[]; data?: ApiComplaint[] }).complaints
+            ?? (res as { data?: ApiComplaint[] }).data
+            ?? [])
+        setStats(buildStats(complaints))
+      }
     } catch {
       showToast({ kind: 'danger', text: 'Failed to load complaints data.' })
       setStats(null)
@@ -229,7 +276,7 @@ export function AutoTriageCanvas() {
           <div className="flex gap-3 flex-wrap">
             <StatCard label="Open complaints" value={s.totalOpen} color="text-danger" />
             <StatCard label="Resolved" value={s.totalResolved} color="text-ok" />
-            <StatCard label="Total" value={s.totalOpen + s.totalResolved} sub="sample of 200" color="text-primary" />
+            <StatCard label="Total" value={s.totalOpen + s.totalResolved} color="text-primary" />
           </div>
 
           {/* Donut — category breakdown */}
