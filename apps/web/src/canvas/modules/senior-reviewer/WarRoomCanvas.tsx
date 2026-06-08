@@ -26,6 +26,7 @@ import { useAuth } from '../../../context/AuthContext.js'
 import { useChat } from '../../../context/ChatContext.js'
 import { useApp } from '../../../context/AppContext.js'
 import { AskSaathiButton } from '../../../components/AskSaathiButton.js'
+import { GujaratHeatmap } from '../../../components/GujaratHeatmap.js'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -374,6 +375,9 @@ export function WarRoomCanvas() {
 
       {/* ── Body ── */}
       <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+        {/* Gujarat district heatmap */}
+        <GujaratHeatmap />
+
         {/* Status banner */}
         {data && (
           <div className="rounded-2xl bg-surface-page border border-bdr-light px-5 py-4 mb-4">

@@ -65,6 +65,7 @@ const OPEN_WAR_ROOM: ModuleEntry = {
     'Which CETP needs urgent action?',
     'Top 3 industries to inspect today',
     'Summarise open critical alerts',
+    'Which district is the hottest?',
   ],
 }
 
