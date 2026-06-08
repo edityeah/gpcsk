@@ -52,11 +52,14 @@ interface CallContextValue {
   isInCall: boolean
   isConnecting: boolean
   isMuted: boolean
+  isScreenSharing: boolean
   peerStatus: RTCPeerConnectionState | 'new'
   transcripts: TranscriptLine[]
   startCall: (opts?: StartCallOptions) => Promise<void>
   endCall: () => void
   toggleMute: () => void
+  startScreenShare: () => Promise<void>
+  stopScreenShare: () => void
 }
 
 const Ctx = createContext<CallContextValue | null>(null)
@@ -80,6 +83,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const [isInCall, setIsInCall] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
+  const [isScreenSharing, setIsScreenSharing] = useState(false)
   const [peerStatus, setPeerStatus] = useState<RTCPeerConnectionState | 'new'>('new')
   const [transcripts, setTranscripts] = useState<TranscriptLine[]>([])
 
@@ -90,6 +94,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const localStreamRef = useRef<MediaStream | null>(null)
   // Accumulate assistant delta text until 'done'
   const assistantDeltaRef = useRef<string>('')
+
+  // Screen share refs
+  const screenStreamRef = useRef<MediaStream | null>(null)
+  const screenVideoRef = useRef<HTMLVideoElement | null>(null)
+  const screenCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const screenIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // ── Transcript helpers ────────────────────────────────────────────────────
 
@@ -230,6 +240,107 @@ export function CallProvider({ children }: { children: ReactNode }) {
     dcRef.current.send(JSON.stringify({ type: 'response.create' }))
   }
 
+  // ── stopScreenShare ───────────────────────────────────────────────────────
+
+  const stopScreenShare = useCallback(() => {
+    if (screenIntervalRef.current !== null) {
+      clearInterval(screenIntervalRef.current)
+      screenIntervalRef.current = null
+    }
+    screenStreamRef.current?.getTracks().forEach((t) => t.stop())
+    screenStreamRef.current = null
+    // Clean up off-screen elements
+    if (screenVideoRef.current) {
+      screenVideoRef.current.srcObject = null
+      screenVideoRef.current = null
+    }
+    screenCanvasRef.current = null
+    setIsScreenSharing(false)
+  }, [])
+
+  // ── startScreenShare ──────────────────────────────────────────────────────
+
+  const startScreenShare = useCallback(async () => {
+    if (!isInCall || isScreenSharing) return
+    if (!dcRef.current || dcRef.current.readyState !== 'open') return
+
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 1, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      })
+      screenStreamRef.current = stream
+
+      // Create off-screen video element
+      const video = document.createElement('video')
+      video.srcObject = stream
+      video.muted = true
+      video.playsInline = true
+      video.style.display = 'none'
+      document.body.appendChild(video)
+      screenVideoRef.current = video
+      await video.play()
+
+      // Create off-screen canvas element
+      const canvas = document.createElement('canvas')
+      canvas.width = 1280
+      canvas.height = 720
+      canvas.style.display = 'none'
+      document.body.appendChild(canvas)
+      screenCanvasRef.current = canvas
+
+      // Stop when the user clicks browser's native "Stop sharing"
+      stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+        stopScreenShare()
+      })
+
+      // Capture and send a frame every 2 seconds
+      screenIntervalRef.current = setInterval(() => {
+        const vid = screenVideoRef.current
+        const cvs = screenCanvasRef.current
+        const dc = dcRef.current
+        if (!vid || !cvs || !dc || dc.readyState !== 'open') return
+
+        // Preserve aspect ratio, max 1280×720
+        const vw = vid.videoWidth || 1280
+        const vh = vid.videoHeight || 720
+        const scale = Math.min(1280 / vw, 720 / vh, 1)
+        const dw = Math.round(vw * scale)
+        const dh = Math.round(vh * scale)
+        cvs.width = dw
+        cvs.height = dh
+        const ctx = cvs.getContext('2d')
+        if (!ctx) return
+        ctx.drawImage(vid, 0, 0, dw, dh)
+
+        const dataUrl = cvs.toDataURL('image/jpeg', 0.6)
+
+        // Send the image as a user message content item.
+        // We do NOT auto-trigger response.create on each frame — the model
+        // accumulates visual context and will reference the screen when the
+        // user's next spoken turn arrives or when the model is already
+        // responding.  This avoids the model interrupting itself every 2s.
+        try {
+          dc.send(JSON.stringify({
+            type: 'conversation.item.create',
+            item: {
+              type: 'message',
+              role: 'user',
+              content: [{ type: 'input_image', image_url: dataUrl }],
+            },
+          }))
+        } catch {
+          // Data channel closed mid-send — ignore
+        }
+      }, 2000)
+
+      setIsScreenSharing(true)
+    } catch (err) {
+      console.error('[CallProvider] startScreenShare error', err)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isInCall, isScreenSharing, stopScreenShare])
+
   // ── startCall ─────────────────────────────────────────────────────────────
 
   const startCall = useCallback(async (opts?: StartCallOptions) => {
@@ -330,6 +441,24 @@ export function CallProvider({ children }: { children: ReactNode }) {
   // ── endCall ───────────────────────────────────────────────────────────────
 
   const endCall = useCallback(() => {
+    // Stop screen share first (clears its interval + stream)
+    if (screenIntervalRef.current !== null) {
+      clearInterval(screenIntervalRef.current)
+      screenIntervalRef.current = null
+    }
+    screenStreamRef.current?.getTracks().forEach((t) => t.stop())
+    screenStreamRef.current = null
+    if (screenVideoRef.current) {
+      screenVideoRef.current.srcObject = null
+      screenVideoRef.current.remove()
+      screenVideoRef.current = null
+    }
+    if (screenCanvasRef.current) {
+      screenCanvasRef.current.remove()
+      screenCanvasRef.current = null
+    }
+    setIsScreenSharing(false)
+
     pcRef.current?.close()
     pcRef.current = null
     dcRef.current = null
@@ -365,13 +494,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
       isInCall,
       isConnecting,
       isMuted,
+      isScreenSharing,
       peerStatus,
       transcripts,
       startCall,
       endCall,
       toggleMute,
+      startScreenShare,
+      stopScreenShare,
     }),
-    [isInCall, isConnecting, isMuted, peerStatus, transcripts, startCall, endCall, toggleMute],
+    [isInCall, isConnecting, isMuted, isScreenSharing, peerStatus, transcripts, startCall, endCall, toggleMute, startScreenShare, stopScreenShare],
   )
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

@@ -35,7 +35,9 @@ You can do three things:
 
 You are speaking out loud to a GPCB officer over a phone-style call. Keep answers concise (2-3 sentences). When the officer asks about pollution data you don't immediately know, call the rag_search function. When they ask you to open a dashboard, call the open_canvas function with the appropriate canvas name. Don't read out long URLs or IDs.
 
-Available canvas names: OPEN_WAR_ROOM, OPEN_GUJARAT_PULSE, OPEN_INDUSTRY_RISK_INDEX, OPEN_ENFORCEMENT_PIPELINE, OPEN_TREND_LAB, OPEN_APPLICATION_QUEUE, OPEN_CONSENT_PIPELINE, OPEN_RENEWAL_RADAR, OPEN_OCEMS_LIVE_GRID, OPEN_EXCEEDANCE_FEED, OPEN_CETP_SCORECARD, OPEN_AAQM_MONITOR, OPEN_VOC_CLUSTER_MONITOR, OPEN_FESTIVAL_PLANNER, OPEN_INSPECTION_PRIORITISATION, OPEN_DRAFT_NOTICE, OPEN_VIOLATIONS_REGISTER, OPEN_COMPLAINT_INBOX, OPEN_COMPLAINT_HOTSPOT_MAP, OPEN_MAKER_CHECKER_QUEUE, OPEN_INDUSTRY_DEEP_DIVE.`
+Available canvas names: OPEN_WAR_ROOM, OPEN_GUJARAT_PULSE, OPEN_INDUSTRY_RISK_INDEX, OPEN_ENFORCEMENT_PIPELINE, OPEN_TREND_LAB, OPEN_APPLICATION_QUEUE, OPEN_CONSENT_PIPELINE, OPEN_RENEWAL_RADAR, OPEN_OCEMS_LIVE_GRID, OPEN_EXCEEDANCE_FEED, OPEN_CETP_SCORECARD, OPEN_AAQM_MONITOR, OPEN_VOC_CLUSTER_MONITOR, OPEN_FESTIVAL_PLANNER, OPEN_INSPECTION_PRIORITISATION, OPEN_DRAFT_NOTICE, OPEN_VIOLATIONS_REGISTER, OPEN_COMPLAINT_INBOX, OPEN_COMPLAINT_HOTSPOT_MAP, OPEN_MAKER_CHECKER_QUEUE, OPEN_INDUSTRY_DEEP_DIVE.
+
+If the officer shares their screen, you will periodically receive images of what they are seeing as part of the conversation. Use these images to answer questions like "what am I looking at?", "what does this chart show?", or "what's highlighted here?". Do not narrate screen images unprompted — only reference what is on screen when the officer asks about it or when it is directly relevant to their question.`
 
 const VOICE_TOOLS = [
   {

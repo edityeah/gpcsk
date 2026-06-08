@@ -37,7 +37,7 @@ import { useAuth } from '../context/AuthContext.js'
 import { api } from '../lib/api.js'
 import { ChatProvider, useChat } from '../context/ChatContext.js'
 import { CallProvider, useCall } from '../context/CallProvider.js'
-import { FloatingCallPill } from '../components/FloatingCallPill.js'
+import { CallStatusPill } from '../components/CallStatusPill.js'
 import { CanvasCallButton } from '../components/CanvasCallButton.js'
 import { ChatBubble, TypingDots } from '../components/ChatBubble.js'
 import GpcbLogo from '../components/GpcbLogo.js'
@@ -131,7 +131,6 @@ export function SuperHomePage() {
     <ChatProvider>
       <CallProvider>
         <Shell />
-        <FloatingCallPill />
       </CallProvider>
     </ChatProvider>
   )
@@ -167,6 +166,7 @@ function Shell() {
             <Menu className="w-5 h-5 text-txt-secondary" />
           </button>
           <div className="flex items-center gap-2 md:gap-3">
+            <CallStatusPill />
             <VoiceQuickButton />
             <SaathiQuickButton />
             <BellButton />
