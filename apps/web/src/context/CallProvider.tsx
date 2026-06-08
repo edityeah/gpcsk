@@ -61,8 +61,10 @@ interface CallContextValue {
 
 const Ctx = createContext<CallContextValue | null>(null)
 
-const REALTIME_URL = 'https://api.openai.com/v1/realtime'
-const REALTIME_MODEL = 'gpt-4o-realtime-preview-2024-12-17'
+// OpenAI Realtime WebRTC call endpoint (new path; the legacy /v1/realtime
+// is gone — SDP exchange happens at /v1/realtime/calls).
+const REALTIME_URL = 'https://api.openai.com/v1/realtime/calls'
+const REALTIME_MODEL = 'gpt-realtime'
 const MAX_TRANSCRIPTS = 20
 
 function makeId() {
