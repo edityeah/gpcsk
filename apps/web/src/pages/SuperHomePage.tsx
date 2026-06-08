@@ -501,7 +501,10 @@ function ContentArea() {
   // Only show messages that were NOT sent from inside a canvas in the main chat thread.
   const mainChatMessages = messages.filter((m) => !(m as { canvasContext?: string }).canvasContext)
 
-  const greetedView = mainChatMessages.length === 0 && !canvasState.module
+  // Keep the greeting / app-grid rendered behind a half-open canvas so the
+  // left half of the main pane isn't blank. Only switch to the chat-thread
+  // view when the user has actually started a non-canvas conversation.
+  const greetedView = mainChatMessages.length === 0
   const role = user?.role ?? 'SENIOR_REVIEWER'
   const chips = SUGGESTIONS_BY_ROLE[role] ?? []
 
