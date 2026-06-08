@@ -82,10 +82,9 @@ describe('POST /api/voice/session', () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
-        id: 'sess_abc123',
-        model: 'gpt-4o-realtime-preview-2024-12-17',
-        client_secret: { value: 'ek_live_testtoken', expires_at: 9999999999 },
+        value: 'ek_live_testtoken',
         expires_at: 9999999999,
+        session: { id: 'sess_abc123', model: 'gpt-4o-realtime-preview-2024-12-17' },
       }),
     })
     const res = await request(app)
@@ -104,10 +103,9 @@ describe('POST /api/voice/session', () => {
       return {
         ok: true,
         json: async () => ({
-          id: 'sess_xyz',
-          model: 'gpt-4o-realtime-preview-2024-12-17',
-          client_secret: { value: 'ek_live_ctx', expires_at: 9999999999 },
+          value: 'ek_live_ctx',
           expires_at: 9999999999,
+          session: { id: 'sess_xyz', model: 'gpt-4o-realtime-preview-2024-12-17' },
         }),
       }
     })
@@ -116,8 +114,8 @@ describe('POST /api/voice/session', () => {
       .set('Authorization', `Bearer ${srToken}`)
       .send({ contextHint: 'War Room canvas is open.' })
     expect(res.status).toBe(200)
-    const body = capturedBody as { instructions?: string }
-    expect(body.instructions).toContain('War Room canvas is open.')
+    const body = capturedBody as { session?: { instructions?: string } }
+    expect(body.session?.instructions).toContain('War Room canvas is open.')
   })
 })
 
