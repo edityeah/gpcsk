@@ -570,4 +570,18 @@ export const dataTools = [
       },
     },
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'queryDistrictCriticality',
+      description:
+        'Query per-district criticality scores for Gujarat. Returns an array of {districtId, districtName, criticality, breakdown} sorted by criticality descending. Use this to answer "which district is the hottest?" or "top 3 most critical districts right now". Call before renderChart for district comparisons.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          topN: { type: 'number', description: 'Return only top N districts by criticality (default: all)' },
+        },
+      },
+    },
+  },
 ]

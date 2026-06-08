@@ -274,6 +274,60 @@ async function handleDataTool(
       return results
     }
 
+    case 'queryDistrictCriticality': {
+      const topN = args['topN'] as number | undefined
+      const since30d = daysAgo(30)
+
+      const rows = await prisma.$queryRaw<
+        Array<{
+          districtId: string; districtName: string;
+          criticalCount: bigint; majorCount: bigint; anomalyCount: bigint;
+          openComplaints: bigint; activeExceedances: bigint;
+        }>
+      >`
+        SELECT
+          d.id AS "districtId", d.name AS "districtName",
+          COALESCE(SUM(CASE WHEN ex.severity::text = 'CRITICAL' AND ex."dispositionState"::text = 'PENDING'
+                            AND ex."detectedAt" >= ${since30d} THEN 1 ELSE 0 END), 0)::bigint AS "criticalCount",
+          COALESCE(SUM(CASE WHEN ex.severity::text = 'MAJOR' AND ex."dispositionState"::text = 'PENDING'
+                            AND ex."detectedAt" >= ${since30d} THEN 1 ELSE 0 END), 0)::bigint AS "majorCount",
+          COALESCE(SUM(CASE WHEN ex.severity::text = 'MINOR' AND ex."dispositionState"::text = 'PENDING'
+                            AND ex."detectedAt" >= ${since30d} THEN 1 ELSE 0 END), 0)::bigint AS "anomalyCount",
+          COALESCE((
+            SELECT COUNT(*) FROM "Complaint" c
+            JOIN "Industry" ci ON ci.id = c."industryId"
+            WHERE ci."districtId" = d.id AND c.state::text NOT IN ('RESOLVED', 'CLOSED')
+          ), 0)::bigint AS "openComplaints",
+          COALESCE(SUM(CASE WHEN ex."dispositionState"::text = 'PENDING'
+                            AND ex."detectedAt" >= ${since30d} THEN 1 ELSE 0 END), 0)::bigint AS "activeExceedances"
+        FROM "District" d
+        LEFT JOIN "Industry" i ON i."districtId" = d.id
+        LEFT JOIN "MonitoringStation" ms ON ms."industryId" = i.id
+        LEFT JOIN "Exceedance" ex ON ex."stationId" = ms.id
+        GROUP BY d.id, d.name
+        ORDER BY d.name
+      `
+
+      let result = rows.map(r => {
+        const criticalCount      = Number(r.criticalCount)
+        const majorCount         = Number(r.majorCount)
+        const anomalyCount       = Number(r.anomalyCount)
+        const openComplaints     = Number(r.openComplaints)
+        const activeExceedances  = Number(r.activeExceedances)
+        const raw = 4 * criticalCount + 2 * majorCount + anomalyCount
+                  + 0.5 * openComplaints + 0.1 * activeExceedances
+        return {
+          districtId:   r.districtId,
+          districtName: r.districtName,
+          criticality:  Math.min(100, Math.round(raw * 10) / 10),
+          breakdown: { criticalCount, majorCount, anomalyCount, openComplaints, activeExceedances },
+        }
+      }).sort((a, b) => b.criticality - a.criticality)
+
+      if (topN) result = result.slice(0, topN)
+      return result
+    }
+
     default:
       return { error: `Unknown data tool: ${toolName}` }
   }
