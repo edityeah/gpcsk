@@ -42,6 +42,185 @@ const CompleteSchema = z.object({
   nextDueAt:    z.coerce.date().optional(),
 })
 
+const ConfirmQueueSchema = z.object({
+  scheduledAt: z.coerce.date(),
+  inspectorId: z.string().optional(),
+})
+
+const DismissQueueSchema = z.object({
+  reason: z.string().min(1),
+})
+
+// ── Risk-based queue routes — MUST come before /:id to avoid param capture ────
+
+// GET /api/inspections/risk-based-queue/stats
+
+inspectionsRouter.get('/risk-based-queue/stats', requireAuth, async (_req, res) => {
+  const now = new Date()
+  const since30d = new Date(now.getTime() - 30 * 86_400_000)
+
+  const [suggested, confirmedLast30d, dismissedLast30d] = await Promise.all([
+    prisma.riskBasedSuggestion.count({ where: { state: 'SUGGESTED' } }),
+    prisma.riskBasedSuggestion.count({
+      where: { state: 'CONFIRMED', decidedAt: { gte: since30d } },
+    }),
+    prisma.riskBasedSuggestion.count({
+      where: { state: 'DISMISSED', decidedAt: { gte: since30d } },
+    }),
+  ])
+
+  // Average time from suggestedAt to decidedAt for decided rows in last 30d
+  const decidedRows = await prisma.riskBasedSuggestion.findMany({
+    where: {
+      state: { in: ['CONFIRMED', 'DISMISSED'] },
+      decidedAt: { gte: since30d },
+    },
+    select: { suggestedAt: true, decidedAt: true },
+  })
+
+  let avgTimeToDecisionHours: number | null = null
+  if (decidedRows.length > 0) {
+    const totalMs = decidedRows.reduce((sum, r) => {
+      const diff = r.decidedAt ? r.decidedAt.getTime() - r.suggestedAt.getTime() : 0
+      return sum + diff
+    }, 0)
+    avgTimeToDecisionHours = Math.round((totalMs / decidedRows.length / 3_600_000) * 10) / 10
+  }
+
+  res.json({ suggested, confirmedLast30d, dismissedLast30d, avgTimeToDecisionHours })
+})
+
+// GET /api/inspections/risk-based-queue
+
+inspectionsRouter.get('/risk-based-queue', requireAuth, async (_req, res) => {
+  const items = await prisma.riskBasedSuggestion.findMany({
+    where: { state: 'SUGGESTED' },
+    orderBy: { riskScore: 'desc' },
+    include: {
+      industry: {
+        select: { id: true, name: true, ucNumber: true, category: true, district: { select: { name: true } } },
+      },
+    },
+  })
+
+  res.json(items)
+})
+
+// POST /api/inspections/risk-based-queue/:id/confirm — IEO or SENIOR_REVIEWER
+
+inspectionsRouter.post(
+  '/risk-based-queue/:id/confirm',
+  requireAuth,
+  requireRole('INSPECTION_ENFORCEMENT_OFFICER', 'SENIOR_REVIEWER'),
+  async (req, res) => {
+    const parsed = ConfirmQueueSchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() })
+      return
+    }
+
+    const suggestion = await prisma.riskBasedSuggestion.findUnique({ where: { id: req.params['id'] } })
+    if (!suggestion) {
+      res.status(404).json({ error: 'suggestion_not_found' })
+      return
+    }
+    if (suggestion.state !== 'SUGGESTED') {
+      res.status(409).json({ error: 'not_in_suggested_state', current: suggestion.state })
+      return
+    }
+
+    const actorId = req.auth!.sub
+    const now = new Date()
+
+    const [inspection, updatedSuggestion] = await prisma.$transaction(async (tx) => {
+      const insp = await tx.inspection.create({
+        data: {
+          industryId:     suggestion.industryId,
+          scheduledAt:    parsed.data.scheduledAt,
+          inspectorId:    parsed.data.inspectorId ?? actorId,
+          state:          'SCHEDULED',
+          inspectionType: 'RISK_BASED',
+          observations:   {},
+          photos:         [],
+        },
+      })
+
+      const sugg = await tx.riskBasedSuggestion.update({
+        where: { id: suggestion.id },
+        data: {
+          state:                 'CONFIRMED',
+          decidedById:           actorId,
+          decidedAt:             now,
+          scheduledInspectionId: insp.id,
+        },
+      })
+
+      return [insp, sugg]
+    })
+
+    await writeAudit({
+      actorId,
+      entity:   'RiskBasedSuggestion',
+      entityId: suggestion.id,
+      action:   'CONFIRMED',
+      before:   { state: 'SUGGESTED' } as never,
+      after:    { state: 'CONFIRMED', scheduledInspectionId: inspection.id } as never,
+      reason:   'Risk-based inspection confirmed and scheduled',
+    })
+
+    res.status(201).json({ suggestion: updatedSuggestion, inspection })
+  },
+)
+
+// POST /api/inspections/risk-based-queue/:id/dismiss — IEO or SENIOR_REVIEWER
+
+inspectionsRouter.post(
+  '/risk-based-queue/:id/dismiss',
+  requireAuth,
+  requireRole('INSPECTION_ENFORCEMENT_OFFICER', 'SENIOR_REVIEWER'),
+  async (req, res) => {
+    const parsed = DismissQueueSchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() })
+      return
+    }
+
+    const suggestion = await prisma.riskBasedSuggestion.findUnique({ where: { id: req.params['id'] } })
+    if (!suggestion) {
+      res.status(404).json({ error: 'suggestion_not_found' })
+      return
+    }
+    if (suggestion.state !== 'SUGGESTED') {
+      res.status(409).json({ error: 'not_in_suggested_state', current: suggestion.state })
+      return
+    }
+
+    const actorId = req.auth!.sub
+    const now = new Date()
+
+    const updated = await prisma.riskBasedSuggestion.update({
+      where: { id: suggestion.id },
+      data: {
+        state:       'DISMISSED',
+        decidedById: actorId,
+        decidedAt:   now,
+      },
+    })
+
+    await writeAudit({
+      actorId,
+      entity:   'RiskBasedSuggestion',
+      entityId: suggestion.id,
+      action:   'DISMISSED',
+      before:   { state: 'SUGGESTED' } as never,
+      after:    { state: 'DISMISSED' } as never,
+      reason:   parsed.data.reason,
+    })
+
+    res.json(updated)
+  },
+)
+
 // ── GET /api/inspections ──────────────────────────────────────────────────────
 
 inspectionsRouter.get('/', requireAuth, async (req, res) => {

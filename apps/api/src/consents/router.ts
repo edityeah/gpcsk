@@ -7,6 +7,52 @@ import { writeAudit } from '../audit/service.js'
 
 export const consentsRouter = Router()
 
+// ── GET /api/consents/doc-verification-summary ────────────────────────────────
+// Aggregate counts for the Consent Management dashboard.
+// Must be registered BEFORE /:id routes so it isn't captured by param routing.
+
+consentsRouter.get('/doc-verification-summary', requireAuth, async (_req, res) => {
+  const apps = await prisma.consentApplication.findMany({
+    select: { docVerification: true },
+  })
+
+  const byStatus: Record<string, number> = {
+    BLANK: 0,
+    MISSING: 0,
+    BLURRED: 0,
+    UNCLEAR: 0,
+    UNSCANNED: 0,
+    OK: 0,
+  }
+
+  let totalReviewed = 0
+  let totalAppsAwaitingHumanReview = 0
+
+  for (const app of apps) {
+    const dv = app.docVerification as Record<string, unknown>
+    const documents = Array.isArray(dv['documents']) ? (dv['documents'] as Array<Record<string, unknown>>) : []
+    const humanReviewStatus = typeof dv['humanReviewStatus'] === 'string' ? dv['humanReviewStatus'] : null
+    const aiReviewedAt = dv['aiReviewedAt'] ?? null
+
+    if (aiReviewedAt) totalReviewed++
+
+    if (humanReviewStatus === null || humanReviewStatus === 'PENDING') {
+      if (documents.length > 0 && aiReviewedAt) {
+        totalAppsAwaitingHumanReview++
+      }
+    }
+
+    for (const doc of documents) {
+      const status = typeof doc['status'] === 'string' ? doc['status'] : null
+      if (status && status in byStatus) {
+        byStatus[status]!++
+      }
+    }
+  }
+
+  res.json({ totalReviewed, byStatus, totalAppsAwaitingHumanReview })
+})
+
 const ListQuerySchema = z.object({
   type:               z.enum(['CTE', 'CTO', 'HW_AUTH']).optional(),
   state:              z.enum(['DRAFT', 'UNDER_REVIEW', 'RECOMMENDED', 'APPROVED', 'REJECTED', 'EXPIRED', 'RENEWED']).optional(),
@@ -189,6 +235,85 @@ consentsRouter.post(
       before,
       after:    { state: updated.state, checkerId: updated.checkerId },
       reason:   parsed.data.reason,
+    })
+
+    res.json(updated)
+  },
+)
+
+// ── GET /api/consents/:id/doc-verification ────────────────────────────────────
+
+consentsRouter.get('/:id/doc-verification', requireAuth, async (req, res) => {
+  const consent = await prisma.consentApplication.findUnique({
+    where: { id: req.params['id'] },
+    select: { id: true, docVerification: true },
+  })
+  if (!consent) {
+    res.status(404).json({ error: 'consent_not_found' })
+    return
+  }
+
+  const dv = consent.docVerification as Record<string, unknown>
+  const documents = Array.isArray(dv['documents']) ? dv['documents'] : []
+  const aiReviewedAt = dv['aiReviewedAt'] ?? null
+  const humanReviewStatus = dv['humanReviewStatus'] ?? null
+
+  res.json({ documents, aiReviewedAt, humanReviewStatus })
+})
+
+// ── POST /api/consents/:id/human-review ───────────────────────────────────────
+// CONSENT_OFFICER only
+
+const HumanReviewBodySchema = z.object({
+  status: z.enum(['APPROVED', 'RETURNED']),
+  notes:  z.string().optional(),
+})
+
+consentsRouter.post(
+  '/:id/human-review',
+  requireAuth,
+  requireRole('CONSENT_OFFICER'),
+  async (req, res) => {
+    const parsed = HumanReviewBodySchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() })
+      return
+    }
+
+    const consent = await prisma.consentApplication.findUnique({
+      where: { id: req.params['id'] },
+      select: { id: true, docVerification: true },
+    })
+    if (!consent) {
+      res.status(404).json({ error: 'consent_not_found' })
+      return
+    }
+
+    const actorId = req.auth!.sub
+    const existingDv = consent.docVerification as Record<string, unknown>
+    const before = { humanReviewStatus: existingDv['humanReviewStatus'] ?? null }
+
+    const newDv: Record<string, unknown> = {
+      ...existingDv,
+      humanReviewStatus: parsed.data.status,
+      humanReviewedAt:   new Date().toISOString(),
+      humanReviewedById: actorId,
+      ...(parsed.data.notes !== undefined ? { humanReviewNotes: parsed.data.notes } : {}),
+    }
+
+    const updated = await prisma.consentApplication.update({
+      where: { id: consent.id },
+      data:  { docVerification: newDv as Prisma.InputJsonValue },
+    })
+
+    await writeAudit({
+      actorId,
+      entity:   'ConsentApplication',
+      entityId: consent.id,
+      action:   `DOC_REVIEW_${parsed.data.status}`,
+      before:   before as Prisma.InputJsonValue,
+      after:    { humanReviewStatus: parsed.data.status } as Prisma.InputJsonValue,
+      reason:   parsed.data.notes,
     })
 
     res.json(updated)
