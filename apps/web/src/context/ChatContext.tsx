@@ -110,13 +110,18 @@ interface ChatContextValue {
   threads: ChatThread[]
   currentThread: ChatThread | null
   messages: ChatMessage[]
+  /** Derived view of the top of the canvas stack (null module = no canvas open) */
   canvasState: CanvasState
+  /** Full canvas navigation stack — index 0 is the root, last entry is current */
+  canvasStack: Array<{ module: string; args: Record<string, unknown> }>
   busy: boolean
 
   sendMessage: (content: string, opts?: SendMessageOptions) => Promise<void>
   newThread: () => void
   openThread: (threadId: string) => void
   openCanvas: (module: string, args?: Record<string, unknown>) => void
+  /** Pop one level off the canvas stack. If stack becomes empty, canvas closes. */
+  backCanvas: () => void
   closeCanvas: () => void
 }
 
@@ -138,7 +143,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null)
   // messages keyed by thread id (kept in-memory only for the demo)
   const [messagesByThread, setMessagesByThread] = useState<Record<string, ChatMessage[]>>({})
-  const [canvasState, setCanvasState] = useState<CanvasState>({ module: null })
+  const [canvasStack, setCanvasStack] = useState<Array<{ module: string; args: Record<string, unknown> }>>([])
+
+  // Derived view — keeps all existing consumers working unchanged
+  const canvasState: CanvasState = canvasStack.length > 0
+    ? { module: canvasStack[canvasStack.length - 1].module, args: canvasStack[canvasStack.length - 1].args }
+    : { module: null }
   const [busy, setBusy] = useState(false)
 
   // Reset chat state when the user signs out
@@ -147,7 +157,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setThreads([])
       setCurrentThreadId(null)
       setMessagesByThread({})
-      setCanvasState({ module: null })
+      setCanvasStack([])
       setBusy(false)
     }
   }, [user])
@@ -158,11 +168,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // ── Actions ──────────────────────────────────────────────────────────────
 
   const openCanvas = useCallback((module: string, args?: Record<string, unknown>) => {
-    setCanvasState({ module, args })
+    setCanvasStack((prev) => [...prev, { module, args: args ?? {} }])
+  }, [])
+
+  const backCanvas = useCallback(() => {
+    setCanvasStack((prev) => prev.length > 0 ? prev.slice(0, -1) : prev)
   }, [])
 
   const closeCanvas = useCallback(() => {
-    setCanvasState({ module: null })
+    setCanvasStack([])
   }, [])
 
   const newThread = useCallback(() => {
@@ -323,11 +337,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       currentThread,
       messages,
       canvasState,
+      canvasStack,
       busy,
       sendMessage,
       newThread,
       openThread,
       openCanvas,
+      backCanvas,
       closeCanvas,
     }),
     [
@@ -335,11 +351,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       currentThread,
       messages,
       canvasState,
+      canvasStack,
       busy,
       sendMessage,
       newThread,
       openThread,
       openCanvas,
+      backCanvas,
       closeCanvas,
     ],
   )
