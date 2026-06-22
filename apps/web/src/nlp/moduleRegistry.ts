@@ -44,6 +44,31 @@ export interface ModuleEntry {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Programs — top-level entry (visible to SR + MO)
+// ────────────────────────────────────────────────────────────────────────────
+
+const OPEN_PROGRAMS: ModuleEntry = {
+  id: 'OPEN_PROGRAMS',
+  component: lazy(() =>
+    import('../canvas/modules/programs/ProgramsCanvas.js').then((m) => ({
+      default: m.ProgramsCanvas,
+    })),
+  ),
+  allowedRoles: ['SENIOR_REVIEWER', 'MONITORING_OFFICER'],
+  label: { en: 'Programs', gu: 'કાર્યક્રમો', hi: 'कार्यक्रम' },
+  icon: 'LayoutGrid',
+  tone: 'indigo',
+  description: 'All monitoring streams in one place',
+  sidebarGroup: 'Dashboards',
+  suggestedPrompts: [
+    'Which program has the most exceedances?',
+    'Show me OCEMS',
+    'Air quality status today',
+    'Compare programs',
+  ],
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Senior Reviewer mega-dashboards
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -740,6 +765,8 @@ const OPEN_REPORT_EXPORT: ModuleEntry = {
 // ────────────────────────────────────────────────────────────────────────────
 
 export const moduleRegistry: ModuleEntry[] = [
+  // Programs — top-level overview
+  OPEN_PROGRAMS,
   // Senior Reviewer
   OPEN_WAR_ROOM,
   OPEN_GUJARAT_PULSE,
