@@ -90,16 +90,28 @@ inspectionsRouter.get('/risk-based-queue/stats', requireAuth, async (_req, res) 
   res.json({ suggested, confirmedLast30d, dismissedLast30d, avgTimeToDecisionHours })
 })
 
-// GET /api/inspections/risk-based-queue
+// GET /api/inspections/risk-based-queue?state=SUGGESTED|CONFIRMED|DISMISSED
 
-inspectionsRouter.get('/risk-based-queue', requireAuth, async (_req, res) => {
+const QueueStateSchema = z.object({
+  state: z.enum(['SUGGESTED', 'CONFIRMED', 'DISMISSED']).default('SUGGESTED'),
+})
+
+inspectionsRouter.get('/risk-based-queue', requireAuth, async (req, res) => {
+  const parsed = QueueStateSchema.safeParse(req.query)
+  if (!parsed.success) {
+    res.status(400).json({ error: 'invalid_query', details: parsed.error.flatten() })
+    return
+  }
+  const { state } = parsed.data
+
   const items = await prisma.riskBasedSuggestion.findMany({
-    where: { state: 'SUGGESTED' },
-    orderBy: { riskScore: 'desc' },
+    where: { state },
+    orderBy: state === 'SUGGESTED' ? { riskScore: 'desc' } : { decidedAt: 'desc' },
     include: {
       industry: {
         select: { id: true, name: true, ucNumber: true, category: true, district: { select: { name: true } } },
       },
+      decidedBy: { select: { id: true, name: true } },
     },
   })
 

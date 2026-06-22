@@ -223,6 +223,48 @@ const OPEN_BROADCAST: ModuleEntry = {
 // Consent Officer modules
 // ────────────────────────────────────────────────────────────────────────────
 
+const OPEN_CONSENT_MANAGEMENT: ModuleEntry = {
+  id: 'OPEN_CONSENT_MANAGEMENT',
+  component: lazy(() =>
+    import('../canvas/modules/consent-officer/ConsentManagementCanvas.js'),
+  ),
+  allowedRoles: ['CONSENT_OFFICER', 'SENIOR_REVIEWER'],
+  label: { en: 'Consent Management', gu: 'સંમતિ વ્યવસ્થાપન', hi: 'सहमति प्रबंधन' },
+  icon: 'Layers',
+  tone: 'indigo',
+  description: 'AI-verified applications · approval queue · renewal radar',
+  sidebarGroup: 'Dashboards',
+  suggestedPrompts: [
+    'How many applications are awaiting human review?',
+    'AI flagged issues today',
+    'Renewals expiring this month',
+    'Applications approved in the last 30 days',
+    'Show applications with BLURRED or MISSING docs',
+  ],
+}
+
+const OPEN_AI_VERIFICATION: ModuleEntry = {
+  id: 'OPEN_AI_VERIFICATION',
+  component: lazy(() =>
+    import('../canvas/modules/consent-officer/AIVerificationCanvas.js').then((m) => ({
+      default: m.default,
+    })),
+  ),
+  allowedRoles: ['CONSENT_OFFICER'],
+  label: { en: 'AI Verification', gu: 'AI ચકાસણી', hi: 'AI सत्यापन' },
+  icon: 'ShieldCheck',
+  tone: 'violet',
+  description: 'Per-document AI review with approve / return actions',
+  sidebarGroup: 'Workflows',
+  suggestedPrompts: [
+    'Applications with missing documents',
+    'Which consents have the most AI-flagged issues?',
+    'Applications with BLANK documents that need to be returned',
+    'Show me the AI confidence breakdown',
+    'Approve all clear applications',
+  ],
+}
+
 const OPEN_APPLICATION_QUEUE: ModuleEntry = {
   id: 'OPEN_APPLICATION_QUEUE',
   component: lazy(() => import('../canvas/modules/consent-officer/ApplicationQueueCanvas.js')),
@@ -579,6 +621,27 @@ const OPEN_VIOLATIONS_REGISTER: ModuleEntry = {
   ],
 }
 
+const OPEN_RISK_BASED_INSPECTIONS: ModuleEntry = {
+  id: 'OPEN_RISK_BASED_INSPECTIONS',
+  component: lazy(() =>
+    import('../canvas/modules/inspection-enforcement/RiskBasedInspectionsCanvas.js').then((m) => ({
+      default: m.RiskBasedInspectionsCanvas,
+    })),
+  ),
+  allowedRoles: ['INSPECTION_ENFORCEMENT_OFFICER', 'SENIOR_REVIEWER'],
+  label: { en: 'Risk-Based Inspections', gu: 'જોખમ-આધારિત નિરીક્ષણ', hi: 'जोखिम-आधारित निरीक्षण' },
+  icon: 'Target',
+  tone: 'rose',
+  description: 'AI-suggested inspection priorities',
+  sidebarGroup: 'Workflows',
+  suggestedPrompts: [
+    'How many AI-suggested inspections this week?',
+    'Top 5 industries to inspect now',
+    'Confirm the highest-risk one',
+    'Dismiss low-confidence suggestions',
+  ],
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Complaints Officer modules
 // ────────────────────────────────────────────────────────────────────────────
@@ -776,6 +839,8 @@ export const moduleRegistry: ModuleEntry[] = [
   OPEN_MAKER_CHECKER_QUEUE,
   OPEN_BROADCAST,
   // Consent
+  OPEN_CONSENT_MANAGEMENT,
+  OPEN_AI_VERIFICATION,
   OPEN_APPLICATION_QUEUE,
   OPEN_CONSENT_PIPELINE,
   OPEN_RENEWAL_RADAR,
@@ -796,6 +861,7 @@ export const moduleRegistry: ModuleEntry[] = [
   OPEN_ONSITE_CHECKLIST,
   OPEN_DRAFT_NOTICE,
   OPEN_VIOLATIONS_REGISTER,
+  OPEN_RISK_BASED_INSPECTIONS,
   // Complaints
   OPEN_COMPLAINT_INBOX,
   OPEN_AUTO_TRIAGE,
