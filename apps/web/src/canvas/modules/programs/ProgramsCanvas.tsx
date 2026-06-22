@@ -34,6 +34,7 @@ import {
 import { api } from '../../../lib/api.js'
 import { useAuth } from '../../../context/AuthContext.js'
 import { useChat } from '../../../context/ChatContext.js'
+import { useApp } from '../../../context/AppContext.js'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -61,7 +62,6 @@ interface ProgramConfig {
   cardBorder: string
   cardBg: string
   accentText: string
-  saathiPrompt: string
 }
 
 const PROGRAM_CONFIG: Record<string, ProgramConfig> = {
@@ -72,7 +72,6 @@ const PROGRAM_CONFIG: Record<string, ProgramConfig> = {
     cardBorder: 'border-blue-200',
     cardBg: 'bg-blue-50/40',
     accentText: 'text-blue-700',
-    saathiPrompt: 'Show me Water Quality monitoring status',
   },
   AAQM: {
     Icon: Wind,
@@ -81,7 +80,6 @@ const PROGRAM_CONFIG: Record<string, ProgramConfig> = {
     cardBorder: 'border-sky-200',
     cardBg: 'bg-sky-50/40',
     accentText: 'text-sky-700',
-    saathiPrompt: 'Show me Ambient Air Quality monitoring status',
   },
   OCEMS: {
     Icon: Activity,
@@ -90,7 +88,6 @@ const PROGRAM_CONFIG: Record<string, ProgramConfig> = {
     cardBorder: 'border-indigo-200',
     cardBg: 'bg-indigo-50/40',
     accentText: 'text-indigo-700',
-    saathiPrompt: 'Show me OCEMS live grid',
   },
   VOC: {
     Icon: FlaskConical,
@@ -99,7 +96,6 @@ const PROGRAM_CONFIG: Record<string, ProgramConfig> = {
     cardBorder: 'border-violet-200',
     cardBg: 'bg-violet-50/40',
     accentText: 'text-violet-700',
-    saathiPrompt: 'Show me VOC Cluster monitoring status',
   },
   CETP: {
     Icon: Factory,
@@ -108,7 +104,6 @@ const PROGRAM_CONFIG: Record<string, ProgramConfig> = {
     cardBorder: 'border-teal-200',
     cardBg: 'bg-teal-50/40',
     accentText: 'text-teal-700',
-    saathiPrompt: 'Show me CETP scorecard',
   },
   NOISE: {
     Icon: Volume2,
@@ -117,7 +112,6 @@ const PROGRAM_CONFIG: Record<string, ProgramConfig> = {
     cardBorder: 'border-amber-200',
     cardBg: 'bg-amber-50/40',
     accentText: 'text-amber-700',
-    saathiPrompt: 'Show me Noise monitoring status',
   },
   HAZARDOUS_WASTE: {
     Icon: Skull,
@@ -126,7 +120,6 @@ const PROGRAM_CONFIG: Record<string, ProgramConfig> = {
     cardBorder: 'border-rose-200',
     cardBg: 'bg-rose-50/40',
     accentText: 'text-rose-700',
-    saathiPrompt: 'Show me Hazardous Waste tracking status',
   },
   FESTIVAL: {
     Icon: Sparkles,
@@ -135,7 +128,6 @@ const PROGRAM_CONFIG: Record<string, ProgramConfig> = {
     cardBorder: 'border-fuchsia-200',
     cardBg: 'bg-fuchsia-50/40',
     accentText: 'text-fuchsia-700',
-    saathiPrompt: 'Show me Festival monitoring planner',
   },
 }
 
@@ -146,7 +138,6 @@ const DEFAULT_CONFIG: ProgramConfig = {
   cardBorder: 'border-slate-200',
   cardBg: 'bg-slate-50/40',
   accentText: 'text-slate-700',
-  saathiPrompt: 'Show me all monitoring programs',
 }
 
 // ── Trend computation ─────────────────────────────────────────────────────────
@@ -267,7 +258,8 @@ function ProgramCard({ program, onClick }: ProgramCardProps) {
 
 export function ProgramsCanvas() {
   const { token } = useAuth()
-  const { sendMessage } = useChat()
+  const { openCanvas } = useChat()
+  const { showToast } = useApp()
   const [programs, setPrograms] = useState<ProgramSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -287,9 +279,15 @@ export function ProgramsCanvas() {
   useEffect(() => { load() }, [load])
 
   function handleCardClick(program: ProgramSummary) {
-    const cfg = PROGRAM_CONFIG[program.id]
-    const prompt = cfg?.saathiPrompt ?? `Open ${program.name}`
-    void sendMessage(prompt)
+    // Placeholder programs (no canvasId) — show toast
+    if (!program.canvasId) {
+      showToast({ kind: 'info', text: 'Coming in v2' })
+      return
+    }
+    // WATER routes to Trend Lab with a stationType pre-filter
+    const args: Record<string, unknown> =
+      program.id === 'WATER' ? { stationType: 'MINARS' } : {}
+    openCanvas(program.canvasId, args)
   }
 
   return (
