@@ -182,6 +182,181 @@ describe('GET /api/sensors/voc-clusters', () => {
   })
 })
 
+// ── Uptime tests ──────────────────────────────────────────────────────────────
+
+describe('GET /api/sensors/stations/:id/uptime', () => {
+  let uptimeOnlineStationId: string
+  let uptimeOfflineStationId: string
+
+  beforeAll(async () => {
+    const now = new Date()
+
+    // Station A: has a very recent reading (no current outage)
+    const onlineStation = await prisma.monitoringStation.create({
+      data: {
+        name: 'Uptime-Test Online Station',
+        type: 'AAQM',
+        lat: 23.1,
+        lng: 72.6,
+        parameters: ['PM10'],
+        status: 'active',
+      },
+    })
+    uptimeOnlineStationId = onlineStation.id
+
+    // Insert a reading 30 minutes ago → station is online
+    await prisma.sensorReading.create({
+      data: {
+        stationId: uptimeOnlineStationId,
+        parameter: 'PM10',
+        value: 55,
+        unit: 'µg/m³',
+        timestamp: new Date(now.getTime() - 30 * 60 * 1000),
+        validity: 'VALID',
+      },
+    })
+
+    // Seed 30d of uptime stats for the online station (perfect uptime)
+    const stats: Array<{ stationId: string; date: Date; onlineMinutes: number; offlineMinutes: number; outageCount: number }> = []
+    for (let d = 0; d < 30; d++) {
+      stats.push({
+        stationId: uptimeOnlineStationId,
+        date: new Date(Date.UTC(
+          now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - d,
+        )),
+        onlineMinutes: 1440,
+        offlineMinutes: 0,
+        outageCount: 0,
+      })
+    }
+    await prisma.stationUptimeStat.createMany({ data: stats, skipDuplicates: true })
+
+    // Station B: last reading was 6 hours ago → current outage
+    const offlineStation = await prisma.monitoringStation.create({
+      data: {
+        name: 'Uptime-Test Offline Station',
+        type: 'AAQM',
+        lat: 23.2,
+        lng: 72.7,
+        parameters: ['PM10'],
+        status: 'active',
+      },
+    })
+    uptimeOfflineStationId = offlineStation.id
+
+    // Last reading 6 hours ago → outage ongoing
+    await prisma.sensorReading.create({
+      data: {
+        stationId: uptimeOfflineStationId,
+        parameter: 'PM10',
+        value: 80,
+        unit: 'µg/m³',
+        timestamp: new Date(now.getTime() - 6 * 3_600_000),
+        validity: 'VALID',
+      },
+    })
+
+    // Seed 30d of uptime stats: 3 outage days to simulate a problematic station
+    const offlineStats: typeof stats = []
+    for (let d = 0; d < 30; d++) {
+      const hasOutage = d % 10 === 0 // every 10th day has an outage
+      offlineStats.push({
+        stationId: uptimeOfflineStationId,
+        date: new Date(Date.UTC(
+          now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - d,
+        )),
+        onlineMinutes: hasOutage ? 1200 : 1440,
+        offlineMinutes: hasOutage ? 240 : 0,
+        outageCount: hasOutage ? 1 : 0,
+      })
+    }
+    await prisma.stationUptimeStat.createMany({ data: offlineStats, skipDuplicates: true })
+  })
+
+  it('returns 404 for unknown station', async () => {
+    const res = await request(app)
+      .get('/api/sensors/stations/nonexistent-uptime-id/uptime')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(404)
+  })
+
+  it('station with no current outage: currentlyOffline=false, thisOutageStartedAt=null', async () => {
+    const res = await request(app)
+      .get(`/api/sensors/stations/${uptimeOnlineStationId}/uptime`)
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+
+    const body = res.body as {
+      stationId: string
+      stationName: string
+      currentlyOffline: boolean
+      hoursSinceLastReading: number | null
+      thisOutageStartedAt: string | null
+      stats30d: { totalOnlineMinutes: number; totalOfflineMinutes: number; outageCount: number; uptimePct: number }
+      stats90d: { totalOnlineMinutes: number; totalOfflineMinutes: number; outageCount: number; uptimePct: number }
+      daily90d: Array<{ date: string; onlineMinutes: number; offlineMinutes: number; outageCount: number }>
+    }
+
+    expect(body.stationId).toBe(uptimeOnlineStationId)
+    expect(body.currentlyOffline).toBe(false)
+    expect(body.thisOutageStartedAt).toBeNull()
+    expect(body.hoursSinceLastReading).not.toBeNull()
+    expect(body.hoursSinceLastReading!).toBeLessThan(2) // within 2h → online
+    expect(body.stats30d).toMatchObject({
+      outageCount: 0,
+      uptimePct: 100,
+    })
+    expect(Array.isArray(body.daily90d)).toBe(true)
+  })
+
+  it('station with current outage (6h since last reading): currentlyOffline=true, thisOutageStartedAt set', async () => {
+    const res = await request(app)
+      .get(`/api/sensors/stations/${uptimeOfflineStationId}/uptime`)
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+
+    const body = res.body as {
+      stationId: string
+      currentlyOffline: boolean
+      hoursSinceLastReading: number | null
+      thisOutageStartedAt: string | null
+      stats30d: { outageCount: number; uptimePct: number }
+    }
+
+    expect(body.stationId).toBe(uptimeOfflineStationId)
+    expect(body.currentlyOffline).toBe(true)
+    expect(body.thisOutageStartedAt).not.toBeNull()
+    expect(body.hoursSinceLastReading).not.toBeNull()
+    expect(body.hoursSinceLastReading!).toBeGreaterThanOrEqual(2)
+    // 3 outage days (d=0,10,20) → outageCount should be 3
+    expect(body.stats30d.outageCount).toBeGreaterThan(0)
+    expect(body.stats30d.uptimePct).toBeLessThan(100)
+  })
+})
+
+describe('GET /api/sensors/stations/latest — uptime field', () => {
+  it('each station entry includes an uptime object with required keys', async () => {
+    const res = await request(app)
+      .get('/api/sensors/stations/latest')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body.stations)).toBe(true)
+
+    const stations = res.body.stations as Array<{
+      id: string
+      uptime?: { hoursOfflineCurrent: number; outageCount30d: number; thisOutageRank: string }
+    }>
+    expect(stations.length).toBeGreaterThan(0)
+
+    for (const s of stations) {
+      expect(s).toHaveProperty('uptime')
+      expect(typeof s.uptime!.hoursOfflineCurrent).toBe('number')
+      expect(typeof s.uptime!.outageCount30d).toBe('number')
+      expect(typeof s.uptime!.thisOutageRank).toBe('string')
+    }
+  })
+})
+
 describe('GET /api/sensors/stations/:id/health — auto-inspection trigger', () => {
   let healthStationId: string
   let healthIndustryId: string

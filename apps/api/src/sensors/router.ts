@@ -5,6 +5,7 @@
  * GET /api/sensors/stations/latest       – latest reading per (station, parameter)
  * GET /api/sensors/stations/:id          – station detail: current values + 24h time-series + active exceedances
  * GET /api/sensors/stations/:id/health   – outage analysis + auto-inspection trigger
+ * GET /api/sensors/stations/:id/uptime   – precomputed StationUptimeStat for last 30/90 days
  * GET /api/sensors/stations/:id/readings – paginated readings co-located with station
  * GET /api/sensors/readings              – paginated readings (stationId required)
  * GET /api/sensors/voc-clusters          – all VOC stations with latest readings
@@ -147,11 +148,72 @@ sensorsRouter.get('/stations/latest', requireAuth, async (req, res) => {
     }
   }
 
+  // ── Uptime stats per station (last 30d) ───────────────────────────────────
+  // Pull StationUptimeStat rows for the last 30 days to enrich each station
+  // with a lightweight uptime summary used by the live-grid canvas.
+  const now30 = new Date()
+  const since30d = new Date(now30.getTime() - 30 * 24 * 3_600_000)
+
+  // Pull last-reading timestamp per station to detect current outages
+  const lastReadingRows = await prisma.$queryRaw<Array<{ station_id: string; last_ts: Date }>>`
+    SELECT DISTINCT ON ("stationId") "stationId" AS station_id, timestamp AS last_ts
+    FROM "SensorReading"
+    ORDER BY "stationId", timestamp DESC
+  `
+  const lastReadingByStation = new Map<string, Date>()
+  for (const r of lastReadingRows) {
+    lastReadingByStation.set(r.station_id, new Date(r.last_ts))
+  }
+
+  const uptimeRows30d = await prisma.stationUptimeStat.findMany({
+    where: { date: { gte: since30d } },
+    select: { stationId: true, onlineMinutes: true, offlineMinutes: true, outageCount: true },
+  })
+
+  // Aggregate per station: sum online/offline minutes, total outage count
+  const uptimeByStation = new Map<string, { totalOnlineMinutes: number; totalOfflineMinutes: number; outageCount30d: number }>()
+  for (const r of uptimeRows30d) {
+    const agg = uptimeByStation.get(r.stationId) ?? { totalOnlineMinutes: 0, totalOfflineMinutes: 0, outageCount30d: 0 }
+    agg.totalOnlineMinutes += r.onlineMinutes
+    agg.totalOfflineMinutes += r.offlineMinutes
+    agg.outageCount30d += r.outageCount
+    uptimeByStation.set(r.stationId, agg)
+  }
+
+  /** Ordinal rank string: 1 → '1st', 2 → '2nd', 3 → '3rd', n → 'nth' */
+  function ordinal(n: number): string {
+    const s = ['th', 'st', 'nd', 'rd']
+    const v = n % 100
+    return n + (s[(v - 20) % 10] ?? s[v] ?? s[0]!)
+  }
+
+  const TWO_HOURS = 2 // hours threshold for outage
+  const nowMs = now30.getTime()
+
+  type UptimeSummary = {
+    hoursOfflineCurrent: number
+    outageCount30d: number
+    thisOutageRank: string
+  }
+
+  function buildUptimeSummary(stationId: string): UptimeSummary {
+    const agg = uptimeByStation.get(stationId)
+    const outageCount30d = agg?.outageCount30d ?? 0
+    const lastTs = lastReadingByStation.get(stationId)
+    const hoursOfflineCurrent = lastTs
+      ? Math.max(0, Math.round(((nowMs - lastTs.getTime()) / 3_600_000) * 10) / 10)
+      : 0
+    const isCurrentlyOffline = hoursOfflineCurrent >= TWO_HOURS
+    const thisOutageRank = isCurrentlyOffline ? ordinal(outageCount30d) : 'none'
+    return { hoursOfflineCurrent, outageCount30d, thisOutageRank }
+  }
+
   const byStation = new Map<string, {
     id: string; name: string; status: string; type: string;
     industry: { id: string; name: string } | null;
     district: string | null;
     readings: Array<{ parameter: string; value: number; unit: string; normMin: number | null; normMax: number | null; normUnit: string | null; timestamp: string; validity: string }>;
+    uptime: UptimeSummary;
   }>()
   for (const row of rows) {
     if (!byStation.has(row.station_id)) {
@@ -160,6 +222,7 @@ sensorsRouter.get('/stations/latest', requireAuth, async (req, res) => {
         industry: row.industry_id && row.industry_name ? { id: row.industry_id, name: row.industry_name } : null,
         district: row.district_name,
         readings: [],
+        uptime: buildUptimeSummary(row.station_id),
       })
     }
     const stream = NORM_STREAM_BY_TYPE[row.station_type]
@@ -188,6 +251,7 @@ sensorsRouter.get('/stations/latest', requireAuth, async (req, res) => {
         industry: s.industry ? { id: s.industry.id, name: s.industry.name } : null,
         district: s.industry?.district?.name ?? null,
         readings: [],
+        uptime: buildUptimeSummary(s.id),
       })
     }
   }
@@ -416,6 +480,97 @@ sensorsRouter.get('/stations/:id/health', requireAuth, async (req, res) => {
     outageCount30d,
     totalOfflineHours30d,
     autoInspectionTriggered,
+  })
+})
+
+// ── GET /api/sensors/stations/:id/uptime ─────────────────────────────────
+//
+// Returns precomputed StationUptimeStat rows for the last 30/90 days.
+//
+// Response shape:
+//   {
+//     stationId, stationName,
+//     currentlyOffline: boolean,
+//     hoursSinceLastReading: number | null,
+//     thisOutageStartedAt: ISO | null,
+//     stats30d: { totalOnlineMinutes, totalOfflineMinutes, outageCount, uptimePct },
+//     stats90d: { ... },
+//     daily90d: [{ date, onlineMinutes, offlineMinutes, outageCount }, ...]
+//   }
+
+sensorsRouter.get('/stations/:id/uptime', requireAuth, async (req, res) => {
+  const { id } = req.params
+
+  const station = await prisma.monitoringStation.findUnique({
+    where: { id },
+    select: { id: true, name: true, status: true },
+  })
+  if (!station) {
+    res.status(404).json({ error: 'station_not_found' })
+    return
+  }
+
+  const now = new Date()
+  const since90d = new Date(now.getTime() - 90 * 24 * 3_600_000)
+  const since30d = new Date(now.getTime() - 30 * 24 * 3_600_000)
+
+  // Fetch 90 days of precomputed rows, ordered oldest→newest
+  const allRows = await prisma.stationUptimeStat.findMany({
+    where: { stationId: id, date: { gte: since90d } },
+    orderBy: { date: 'asc' },
+    select: { date: true, onlineMinutes: true, offlineMinutes: true, outageCount: true },
+  })
+
+  // Split into 30d and 90d buckets
+  const rows30d = allRows.filter(r => r.date >= since30d)
+  const rows90d = allRows
+
+  const sumRows = (rows: typeof allRows) => {
+    let totalOnlineMinutes = 0
+    let totalOfflineMinutes = 0
+    let outageCount = 0
+    for (const r of rows) {
+      totalOnlineMinutes += r.onlineMinutes
+      totalOfflineMinutes += r.offlineMinutes
+      outageCount += r.outageCount
+    }
+    const totalMinutes = totalOnlineMinutes + totalOfflineMinutes
+    const uptimePct = totalMinutes > 0
+      ? Math.round((totalOnlineMinutes / totalMinutes) * 10000) / 100
+      : 100
+    return { totalOnlineMinutes, totalOfflineMinutes, outageCount, uptimePct }
+  }
+
+  // Latest reading timestamp to determine current outage state
+  const latestReading = await prisma.sensorReading.findFirst({
+    where: { stationId: id },
+    orderBy: { timestamp: 'desc' },
+    select: { timestamp: true },
+  })
+
+  const lastReadingAt = latestReading?.timestamp ?? null
+  const hoursSinceLastReading = lastReadingAt
+    ? Math.round(((now.getTime() - lastReadingAt.getTime()) / 3_600_000) * 10) / 10
+    : null
+
+  const TWO_HOURS = 2
+  const currentlyOffline = hoursSinceLastReading != null && hoursSinceLastReading >= TWO_HOURS
+  const thisOutageStartedAt = currentlyOffline && lastReadingAt ? lastReadingAt.toISOString() : null
+
+  res.json({
+    stationId: id,
+    stationName: station.name,
+    currentlyOffline,
+    hoursSinceLastReading,
+    thisOutageStartedAt,
+    stats30d: sumRows(rows30d),
+    stats90d: sumRows(rows90d),
+    daily90d: rows90d.map(r => ({
+      date: r.date instanceof Date ? r.date.toISOString().slice(0, 10) : String(r.date).slice(0, 10),
+      onlineMinutes: r.onlineMinutes,
+      offlineMinutes: r.offlineMinutes,
+      outageCount: r.outageCount,
+    })),
   })
 })
 
