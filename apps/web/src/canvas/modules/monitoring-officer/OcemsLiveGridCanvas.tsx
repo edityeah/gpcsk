@@ -45,6 +45,12 @@ interface Station {
   industry: { id: string; name: string } | null
   district: string | null
   readings: Reading[]
+  uptime?: {
+    hoursOfflineCurrent: number
+    outageCount30d: number
+    thisOutageRank?: string
+  }
+  autoInspectionTriggered?: boolean
 }
 
 interface Outage {
@@ -124,6 +130,12 @@ function fmtDateTime(iso: string): string {
   return new Date(iso).toLocaleString('en-IN', {
     day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
   })
+}
+
+function toOrdinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`
 }
 
 // ── Station Health Modal ──────────────────────────────────────────────────────
@@ -383,12 +395,46 @@ export function OcemsLiveGridCanvas() {
                 ? station.readings.map(r => r.timestamp).sort().pop()!
                 : null
 
-              // Offline subtext
-              const offlineSubtext = isOffline && health
-                ? `Last seen ${health.hoursSinceLastReading != null ? `${health.hoursSinceLastReading.toFixed(0)}h ago` : '—'} · ${health.outageCount30d} outage${health.outageCount30d !== 1 ? 's' : ''} in 30d`
-                : isOffline
-                  ? latestTs ? `Last seen ${timeAgo(latestTs)}` : 'No readings found'
+              // Uptime inline stats — prefer station.uptime (from /latest endpoint),
+              // fall back to lazily loaded health cache for offline/unknown stations
+              const uptimeData = station.uptime
+                ? {
+                    hoursOfflineCurrent: station.uptime.hoursOfflineCurrent,
+                    outageCount30d: station.uptime.outageCount30d,
+                    thisOutageRank: station.uptime.thisOutageRank,
+                    autoInspectionTriggered: station.autoInspectionTriggered ?? false,
+                  }
+                : health
+                  ? {
+                      hoursOfflineCurrent: health.hoursSinceLastReading ?? 0,
+                      outageCount30d: health.outageCount30d,
+                      thisOutageRank: undefined,
+                      autoInspectionTriggered: health.autoInspectionTriggered,
+                    }
                   : null
+
+              const outageCount = uptimeData?.outageCount30d ?? 0
+              const isFrequentlyOffline = outageCount >= 3
+              const showAutoInspection =
+                isFrequentlyOffline && (uptimeData?.autoInspectionTriggered ?? false)
+
+              // Build uptime subtext line
+              let uptimeSubtext: string | null = null
+              if (uptimeData) {
+                if (uptimeData.hoursOfflineCurrent > 0) {
+                  const rank = uptimeData.thisOutageRank ?? toOrdinal(outageCount)
+                  uptimeSubtext = `📡 Offline ${Math.round(uptimeData.hoursOfflineCurrent)}h · ${rank} outage of 30d`
+                } else {
+                  uptimeSubtext = `📡 Online · ${outageCount} outage${outageCount !== 1 ? 's' : ''} in last 30d`
+                }
+              } else if (isOffline) {
+                uptimeSubtext = latestTs ? `📡 Last seen ${timeAgo(latestTs)}` : '📡 No readings found'
+              }
+
+              // Offline subtext (legacy — kept for stations without uptime data)
+              const offlineSubtext = isOffline && !uptimeData && health
+                ? `Last seen ${health.hoursSinceLastReading != null ? `${health.hoursSinceLastReading.toFixed(0)}h ago` : '—'} · ${health.outageCount30d} outage${health.outageCount30d !== 1 ? 's' : ''} in 30d`
+                : null
 
               return (
                 <div
@@ -402,11 +448,6 @@ export function OcemsLiveGridCanvas() {
                         {level === 'critical' && <AlertTriangle className="w-4 h-4 text-danger flex-shrink-0" />}
                         {level === 'ok' && <CheckCircle className="w-4 h-4 text-ok flex-shrink-0" />}
                         {level === 'offline' && <WifiOff className="w-4 h-4 text-txt-tertiary flex-shrink-0" />}
-                        {isOffline && health?.autoInspectionTriggered && (
-                          <span title="Auto-inspection triggered">
-                            <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-                          </span>
-                        )}
                         <span className="text-[12px] font-bold text-txt-primary leading-tight truncate">{station.name}</span>
                       </div>
                       {station.industry && (
@@ -418,7 +459,19 @@ export function OcemsLiveGridCanvas() {
                         {station.district ?? '—'}
                         {!isOffline && latestTs && ` · ${timeAgo(latestTs)}`}
                       </div>
-                      {/* Offline subtext */}
+                      {/* Uptime subtext line */}
+                      {uptimeSubtext && (
+                        <div className={`text-[10px] mt-1 font-medium flex flex-wrap items-center gap-1.5 ${isFrequentlyOffline ? 'text-danger' : 'text-txt-secondary'}`}>
+                          <span>{uptimeSubtext}</span>
+                          {showAutoInspection && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-100 border border-amber-300 text-[9px] font-semibold text-amber-700 uppercase tracking-wide whitespace-nowrap">
+                              <AlertTriangle className="w-2.5 h-2.5 flex-shrink-0" />
+                              Auto-inspection triggered
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {/* Legacy offline subtext fallback */}
                       {offlineSubtext && (
                         <div className="text-[10px] text-amber-600 mt-0.5 font-medium">{offlineSubtext}</div>
                       )}
