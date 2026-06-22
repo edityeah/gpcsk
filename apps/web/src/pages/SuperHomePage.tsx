@@ -892,7 +892,7 @@ function MessageInput({ onSend }: MessageInputProps) {
 // ── Canvas overlay ─────────────────────────────────────────────────────────
 
 function CanvasOverlay() {
-  const { canvasState, closeCanvas } = useChat()
+  const { canvasState, canvasStack, closeCanvas, backCanvas } = useChat()
   const [expanded, setExpanded] = useState(false)
   const open = canvasState.module !== null
 
@@ -923,13 +923,40 @@ function CanvasOverlay() {
       <div className="flex items-center gap-3 px-4 py-3 border-b border-bdr-light bg-white flex-shrink-0">
         <button
           type="button"
-          onClick={closeCanvas}
-          className="w-9 h-9 rounded-xl hover:bg-surface-secondary flex items-center justify-center transition"
+          onClick={backCanvas}
+          className="w-9 h-9 rounded-xl hover:bg-surface-secondary flex items-center justify-center transition flex-shrink-0"
           title="Back"
         >
           <ArrowLeft className="w-4 h-4 text-txt-secondary" />
         </button>
-        <span className="flex-1 text-[14px] font-bold text-txt-primary truncate">{title}</span>
+
+        {/* Breadcrumb — only shown when drilling from a parent canvas */}
+        <div className="flex-1 min-w-0 flex flex-col justify-center">
+          {canvasStack.length > 1 && (
+            <div className="flex items-center gap-1 text-[11px] text-txt-tertiary mb-0.5">
+              {canvasStack.slice(0, -1).map((entry, i) => {
+                const parentEntry = findModule(entry.module)
+                const parentLabel = parentEntry?.label.en ?? entry.module
+                return (
+                  <span key={entry.module} className="flex items-center gap-1">
+                    {i > 0 && <span className="text-txt-tertiary">▸</span>}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        backCanvas()
+                      }}
+                      className="hover:text-txt-primary transition-colors truncate max-w-[120px]"
+                    >
+                      {parentLabel}
+                    </button>
+                  </span>
+                )
+              })}
+              <span className="text-txt-tertiary">▸</span>
+            </div>
+          )}
+          <span className="text-[14px] font-bold text-txt-primary truncate">{title}</span>
+        </div>
         {/* Canvas-scoped voice call */}
         {canvasState.module && (
           <CanvasCallButton
