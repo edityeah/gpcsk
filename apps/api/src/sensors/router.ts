@@ -88,6 +88,8 @@ const NORM_STREAM_BY_TYPE: Record<string, string> = {
 interface LatestRow {
   station_id: string; station_name: string; station_status: string; station_type: string;
   industry_id: string | null; industry_name: string | null; district_name: string | null;
+  data_source: string;
+  last_ingested_at: Date | null;
   parameter: string; value: number; unit: string; timestamp: Date; validity: string;
 }
 
@@ -111,6 +113,8 @@ sensorsRouter.get('/stations/latest', requireAuth, async (req, res) => {
       i.id   AS industry_id,
       i.name AS industry_name,
       d.name AS district_name,
+      s."dataSource" AS data_source,
+      s."lastIngestedAt" AS last_ingested_at,
       r.parameter, r.value, r.unit, r.timestamp, r.validity::text AS validity
     FROM "MonitoringStation" s
     LEFT JOIN "Industry" i ON s."industryId" = i.id
@@ -212,6 +216,8 @@ sensorsRouter.get('/stations/latest', requireAuth, async (req, res) => {
     id: string; name: string; status: string; type: string;
     industry: { id: string; name: string } | null;
     district: string | null;
+    dataSource: string;
+    lastIngestedAt: string | null;
     readings: Array<{ parameter: string; value: number; unit: string; normMin: number | null; normMax: number | null; normUnit: string | null; timestamp: string; validity: string }>;
     uptime: UptimeSummary;
   }>()
@@ -221,6 +227,8 @@ sensorsRouter.get('/stations/latest', requireAuth, async (req, res) => {
         id: row.station_id, name: row.station_name, status: row.station_status, type: row.station_type,
         industry: row.industry_id && row.industry_name ? { id: row.industry_id, name: row.industry_name } : null,
         district: row.district_name,
+        dataSource: row.data_source,
+        lastIngestedAt: row.last_ingested_at ? row.last_ingested_at.toISOString() : null,
         readings: [],
         uptime: buildUptimeSummary(row.station_id),
       })
@@ -242,7 +250,12 @@ sensorsRouter.get('/stations/latest', requireAuth, async (req, res) => {
   // Include stations that have no readings (down / calibration / freshly installed).
   const allStations = await prisma.monitoringStation.findMany({
     where: { ...(type ? { type } : {}), ...(status ? { status } : {}) },
-    select: { id: true, name: true, status: true, type: true, industry: { select: { id: true, name: true, district: { select: { name: true } } } } },
+    select: {
+      id: true, name: true, status: true, type: true,
+      dataSource: true,
+      lastIngestedAt: true,
+      industry: { select: { id: true, name: true, district: { select: { name: true } } } },
+    },
   })
   for (const s of allStations) {
     if (!byStation.has(s.id)) {
@@ -250,6 +263,8 @@ sensorsRouter.get('/stations/latest', requireAuth, async (req, res) => {
         id: s.id, name: s.name, status: s.status, type: s.type,
         industry: s.industry ? { id: s.industry.id, name: s.industry.name } : null,
         district: s.industry?.district?.name ?? null,
+        dataSource: s.dataSource,
+        lastIngestedAt: s.lastIngestedAt ? s.lastIngestedAt.toISOString() : null,
         readings: [],
         uptime: buildUptimeSummary(s.id),
       })

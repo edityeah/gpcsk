@@ -124,6 +124,8 @@ export interface ProgramSummary {
   activeStationCount: number
   currentExceedancesCount: number
   recentAnomalyCount30d: number
+  liveStationCount: number
+  provenanceLabel: string
 }
 
 /** Compute live stats for one or more programs in parallel. */
@@ -145,6 +147,8 @@ export async function computeProgramStats(programIds?: string[]): Promise<Progra
           activeStationCount: 0,
           currentExceedancesCount: 0,
           recentAnomalyCount30d: 0,
+          liveStationCount: 0,
+          provenanceLabel: 'N/A',
         }
       }
 
@@ -166,6 +170,8 @@ export async function computeProgramStats(programIds?: string[]): Promise<Progra
           activeStationCount: active,
           currentExceedancesCount: exceedances,
           recentAnomalyCount30d: anomalies,
+          liveStationCount: 0,
+          provenanceLabel: 'N/A',
         }
       }
 
@@ -174,7 +180,7 @@ export async function computeProgramStats(programIds?: string[]): Promise<Progra
         'OCEMS' | 'CEQMS' | 'AAQM' | 'MINARS' | 'GEMS' | 'VOC'
       >
 
-      const [stationCount, activeStationCount, currentExceedancesCount, recentAnomalyCount30d] =
+      const [stationCount, activeStationCount, currentExceedancesCount, recentAnomalyCount30d, liveStationCount] =
         await Promise.all([
           prisma.monitoringStation.count({ where: { type: { in: types } } }),
           prisma.monitoringStation.count({ where: { type: { in: types }, status: 'active' } }),
@@ -190,7 +196,13 @@ export async function computeProgramStats(programIds?: string[]): Promise<Progra
               station: { type: { in: types } },
             },
           }),
+          prisma.monitoringStation.count({ where: { type: { in: types }, dataSource: 'CPCB_LIVE' } }),
         ])
+
+      const syntheticCount = stationCount - liveStationCount
+      const provenanceLabel = liveStationCount > 0
+        ? `${liveStationCount} CPCB Live · ${syntheticCount} Synthetic`
+        : `${stationCount} Synthetic`
 
       return {
         id: p.id,
@@ -201,6 +213,8 @@ export async function computeProgramStats(programIds?: string[]): Promise<Progra
         activeStationCount,
         currentExceedancesCount,
         recentAnomalyCount30d,
+        liveStationCount,
+        provenanceLabel,
       }
     }),
   )

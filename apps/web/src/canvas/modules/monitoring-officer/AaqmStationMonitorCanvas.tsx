@@ -31,6 +31,8 @@ interface ApiStation {
   industry: { id: string; name: string } | null
   district: { id: string; name: string } | null
   readings: ApiReading[]
+  dataSource: string
+  lastIngestedAt: string | null
 }
 
 interface ApiResponse {
@@ -46,6 +48,8 @@ interface AaqmRow {
   PM2_5: number | null
   SO2: number | null
   NOx: number | null
+  dataSource: string
+  lastIngestedAt: string | null
 }
 
 // NAAQS annual standards (µg/m³)
@@ -78,12 +82,49 @@ function getCellStyle(value: number | null, norm: number): string {
   return 'bg-ok-light/50 text-ok'
 }
 
+function timeAgo(isoTs: string | null): string {
+  if (!isoTs) return ''
+  const diffMs = Date.now() - new Date(isoTs).getTime()
+  const mins = Math.floor(diffMs / 60_000)
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
+}
+
+function ProvenancePill({ dataSource, lastIngestedAt }: { dataSource: string; lastIngestedAt: string | null }) {
+  if (dataSource === 'CPCB_LIVE') {
+    const ago = timeAgo(lastIngestedAt)
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-ok-light text-ok border border-ok/20">
+        <span className="w-1.5 h-1.5 rounded-full bg-ok inline-block" />
+        CPCB Live{ago ? ` · ${ago}` : ''}
+      </span>
+    )
+  }
+  if (dataSource === 'REAL_NAME_SYNTHETIC_READINGS') {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-warn-light text-warn border border-warn/20">
+        <span className="w-1.5 h-1.5 rounded-full bg-warn inline-block" />
+        Real name · Synthetic
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-surface-secondary text-txt-tertiary border border-bdr-light">
+      <span className="w-1.5 h-1.5 rounded-full bg-txt-tertiary inline-block" />
+      Synthetic
+    </span>
+  )
+}
+
 export function AaqmStationMonitorCanvas() {
   const { token } = useAuth()
   const { showToast } = useApp()
   const [stations, setStations] = useState<AaqmRow[]>([])
   const [loading, setLoading] = useState(true)
   const [hover, setHover] = useState<{ stationName: string; param: string; value: number } | null>(null)
+  const [showSynthetic, setShowSynthetic] = useState(false)
 
   const load = useCallback(async () => {
     if (!token) return
@@ -105,6 +146,8 @@ export function AaqmStationMonitorCanvas() {
         PM2_5: getReading(s.readings, 'PM2_5'),
         SO2:   getReading(s.readings, 'SO2'),
         NOx:   getReading(s.readings, 'NOx'),
+        dataSource: s.dataSource ?? 'SYNTHETIC',
+        lastIngestedAt: s.lastIngestedAt ?? null,
       }))
       setStations(rows)
     } catch {
@@ -117,7 +160,11 @@ export function AaqmStationMonitorCanvas() {
 
   useEffect(() => { void load() }, [load])
 
-  const exceedCount = stations.filter(s =>
+  const displayedStations = showSynthetic
+    ? stations
+    : stations.filter(s => s.dataSource !== 'SYNTHETIC')
+
+  const exceedCount = displayedStations.filter(s =>
     PARAMS.some(p => {
       const v = s[p.key]
       return v !== null && v >= NAAQS[p.key]
@@ -131,13 +178,23 @@ export function AaqmStationMonitorCanvas() {
         <div>
           <h2 className="text-[16px] font-bold text-txt-primary">AAQM Station Monitor</h2>
           <p className="text-[12px] text-txt-secondary mt-0.5">
-            {loading ? 'Loading…' : `${stations.length} stations × 4 parameters · coloured by NAAQS compliance`}
+            {loading ? 'Loading…' : `${displayedStations.length} stations × 4 parameters · coloured by NAAQS compliance`}
           </p>
         </div>
         <div className="flex items-center gap-3">
           {exceedCount > 0 && (
             <span className="badge badge-danger">{exceedCount} stations exceeding</span>
           )}
+          <button
+            onClick={() => setShowSynthetic(v => !v)}
+            className={`text-[11px] px-2.5 py-1 rounded border transition-colors ${
+              showSynthetic
+                ? 'bg-surface-secondary text-txt-secondary border-bdr-light'
+                : 'bg-warn-light text-warn border-warn/20'
+            }`}
+          >
+            {showSynthetic ? 'Hiding synthetic' : 'Show synthetic stations'}
+          </button>
           <button onClick={() => { void load() }} className="p-2 rounded-lg hover:bg-surface-secondary text-txt-secondary">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
@@ -164,7 +221,7 @@ export function AaqmStationMonitorCanvas() {
       <div className="flex-1 overflow-auto p-4">
         {loading ? (
           <div className="flex items-center justify-center h-40 text-txt-tertiary text-[14px]">Loading AAQM data…</div>
-        ) : stations.length === 0 ? (
+        ) : displayedStations.length === 0 ? (
           <div className="flex items-center justify-center h-40 text-txt-tertiary text-[14px]">No AAQM stations found.</div>
         ) : (
           <div className="bg-white rounded-card border border-bdr-light shadow-card overflow-hidden">
@@ -182,9 +239,14 @@ export function AaqmStationMonitorCanvas() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-bdr-light">
-                {stations.map((s, i) => (
+                {displayedStations.map((s, i) => (
                   <tr key={s.id} className={i % 2 === 0 ? 'bg-white' : 'bg-surface-secondary/20'}>
-                    <td className="px-4 py-2 font-medium text-txt-primary text-[11px] truncate max-w-[180px]">{s.stationName}</td>
+                    <td className="px-4 py-2 text-[11px] max-w-[220px]">
+                      <div className="font-medium text-txt-primary truncate">{s.stationName}</div>
+                      <div className="mt-0.5">
+                        <ProvenancePill dataSource={s.dataSource} lastIngestedAt={s.lastIngestedAt} />
+                      </div>
+                    </td>
                     <td className="px-3 py-2 text-txt-secondary text-[11px]">{s.districtName || '—'}</td>
                     {PARAMS.map(p => {
                       const val = s[p.key]

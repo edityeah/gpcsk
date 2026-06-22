@@ -51,6 +51,8 @@ interface Station {
     thisOutageRank?: string
   }
   autoInspectionTriggered?: boolean
+  dataSource: string
+  lastIngestedAt: string | null
 }
 
 interface Outage {
@@ -136,6 +138,42 @@ function toOrdinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd']
   const v = n % 100
   return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`
+}
+
+function timeAgoProvenance(isoTs: string | null): string {
+  if (!isoTs) return ''
+  const diffMs = Date.now() - new Date(isoTs).getTime()
+  const mins = Math.floor(diffMs / 60_000)
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
+}
+
+function ProvenancePill({ dataSource, lastIngestedAt }: { dataSource: string; lastIngestedAt: string | null }) {
+  if (dataSource === 'CPCB_LIVE') {
+    const ago = timeAgoProvenance(lastIngestedAt)
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-ok-light text-ok border border-ok/20">
+        <span className="w-1.5 h-1.5 rounded-full bg-ok inline-block" />
+        CPCB Live{ago ? ` · ${ago}` : ''}
+      </span>
+    )
+  }
+  if (dataSource === 'REAL_NAME_SYNTHETIC_READINGS') {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-warn-light text-warn border border-warn/20">
+        <span className="w-1.5 h-1.5 rounded-full bg-warn inline-block" />
+        Real name · Synthetic
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-surface-secondary text-txt-tertiary border border-bdr-light">
+      <span className="w-1.5 h-1.5 rounded-full bg-txt-tertiary inline-block" />
+      Synthetic
+    </span>
+  )
 }
 
 // ── Station Health Modal ──────────────────────────────────────────────────────
@@ -272,6 +310,7 @@ export function OcemsLiveGridCanvas() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [healthModal, setHealthModal] = useState<{ id: string; name: string } | null>(null)
+  const [showSynthetic, setShowSynthetic] = useState(false)
 
   // Health cache: stationId → StationHealth (loaded lazily when first seen offline)
   const [healthCache, setHealthCache] = useState<Record<string, StationHealth>>({})
@@ -323,13 +362,18 @@ export function OcemsLiveGridCanvas() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stations, token])
 
+  const displayedStations = useMemo(
+    () => showSynthetic ? stations : stations.filter(s => (s.dataSource ?? 'SYNTHETIC') !== 'SYNTHETIC'),
+    [stations, showSynthetic]
+  )
+
   const counts = useMemo(() => ({
-    ok:       stations.filter(s => stationLevel(s) === 'ok').length,
-    warn:     stations.filter(s => stationLevel(s) === 'warn').length,
-    critical: stations.filter(s => stationLevel(s) === 'critical').length,
-    offline:  stations.filter(s => stationLevel(s) === 'offline').length,
-    unknown:  stations.filter(s => stationLevel(s) === 'unknown').length,
-  }), [stations])
+    ok:       displayedStations.filter(s => stationLevel(s) === 'ok').length,
+    warn:     displayedStations.filter(s => stationLevel(s) === 'warn').length,
+    critical: displayedStations.filter(s => stationLevel(s) === 'critical').length,
+    offline:  displayedStations.filter(s => stationLevel(s) === 'offline').length,
+    unknown:  displayedStations.filter(s => stationLevel(s) === 'unknown').length,
+  }), [displayedStations])
 
   return (
     <div className="h-full flex flex-col bg-surface-page overflow-hidden">
@@ -345,6 +389,16 @@ export function OcemsLiveGridCanvas() {
               Updated {lastUpdated.toLocaleTimeString()}
             </span>
           )}
+          <button
+            onClick={() => setShowSynthetic(v => !v)}
+            className={`text-[11px] px-2.5 py-1 rounded border transition-colors ${
+              showSynthetic
+                ? 'bg-surface-secondary text-txt-secondary border-bdr-light'
+                : 'bg-warn-light text-warn border-warn/20'
+            }`}
+          >
+            {showSynthetic ? 'Hiding synthetic' : 'Show synthetic stations'}
+          </button>
           <button
             onClick={() => { void load() }}
             className="p-2 rounded-lg hover:bg-surface-secondary text-txt-secondary"
@@ -380,13 +434,13 @@ export function OcemsLiveGridCanvas() {
 
       {/* Grid */}
       <div className="flex-1 overflow-y-auto p-6">
-        {loading && stations.length === 0 ? (
+        {loading && displayedStations.length === 0 ? (
           <div className="flex items-center justify-center h-32 text-txt-tertiary text-[14px]">Loading OCEMS stations…</div>
-        ) : stations.length === 0 ? (
+        ) : displayedStations.length === 0 ? (
           <div className="flex items-center justify-center h-32 text-txt-tertiary text-[14px]">No OCEMS stations found.</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {stations.map(station => {
+            {displayedStations.map(station => {
               const level = stationLevel(station)
               const style = STATION_STYLES[level]
               const isOffline = level === 'offline' || level === 'unknown'
@@ -455,6 +509,9 @@ export function OcemsLiveGridCanvas() {
                           <Factory className="w-3 h-3 flex-shrink-0" /> {station.industry.name}
                         </div>
                       )}
+                      <div className="mt-1">
+                        <ProvenancePill dataSource={station.dataSource ?? 'SYNTHETIC'} lastIngestedAt={station.lastIngestedAt ?? null} />
+                      </div>
                       <div className="text-[10px] text-txt-tertiary mt-0.5">
                         {station.district ?? '—'}
                         {!isOffline && latestTs && ` · ${timeAgo(latestTs)}`}
