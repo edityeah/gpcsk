@@ -18,6 +18,15 @@ import type { Role } from '@gpcsk/shared'
 
 export type SidebarGroup = 'Dashboards' | 'Workflows' | 'Tools'
 
+export type Category =
+  | 'WAR_ROOM'
+  | 'PROGRAMS'
+  | 'CONSENT'
+  | 'INSPECTION'
+  | 'COMPLAINTS'
+  | 'DASHBOARDS'
+  | 'SETTINGS'
+
 export type Tone =
   | 'indigo' | 'emerald' | 'amber' | 'sky' | 'rose' | 'violet'
   | 'orange' | 'teal' | 'fuchsia' | 'lime' | 'cyan' | 'pink' | 'slate'
@@ -39,6 +48,10 @@ export interface ModuleEntry {
   description: string
   /** Sidebar grouping bucket */
   sidebarGroup: SidebarGroup
+  /** Category — drives home-grid grouping and sidebar sections */
+  category: Category
+  /** True for parent/hub canvases that appear as hero cards in the home grid */
+  isParent?: boolean
   /** Starter prompts shown in the CanvasSaathiSplit bottom chat panel */
   suggestedPrompts: string[]
 }
@@ -60,6 +73,8 @@ const OPEN_PROGRAMS: ModuleEntry = {
   tone: 'indigo',
   description: 'All monitoring streams in one place',
   sidebarGroup: 'Dashboards',
+  category: 'PROGRAMS',
+  isParent: true,
   suggestedPrompts: [
     'Which program has the most exceedances?',
     'Show me OCEMS',
@@ -85,6 +100,7 @@ const OPEN_WAR_ROOM: ModuleEntry = {
   tone: 'rose',
   description: 'Live anomalies — investigate + act',
   sidebarGroup: 'Dashboards',
+  category: 'WAR_ROOM',
   suggestedPrompts: [
     "What's the worst anomaly right now?",
     'Which CETP needs urgent action?',
@@ -107,6 +123,7 @@ const OPEN_GUJARAT_PULSE: ModuleEntry = {
   tone: 'indigo',
   description: 'State-wide pollution overview',
   sidebarGroup: 'Dashboards',
+  category: 'DASHBOARDS',
   suggestedPrompts: [
     'Compare AIR vs WATER exceedances today',
     'What changed in the last 24 hours?',
@@ -128,6 +145,7 @@ const OPEN_INDUSTRY_RISK_INDEX: ModuleEntry = {
   tone: 'rose',
   description: 'Ranked composite risk score per industry',
   sidebarGroup: 'Dashboards',
+  category: 'DASHBOARDS',
   suggestedPrompts: [
     'Why is the top industry ranked highest?',
     'Top 5 risk industries in Bharuch',
@@ -149,6 +167,7 @@ const OPEN_ENFORCEMENT_PIPELINE: ModuleEntry = {
   tone: 'amber',
   description: 'Show-cause / closure / recovery kanban',
   sidebarGroup: 'Dashboards',
+  category: 'INSPECTION',
   suggestedPrompts: [
     'Show me actions pending review > 14 days',
     'How many show-cause notices were committed this month?',
@@ -170,6 +189,7 @@ const OPEN_TREND_LAB: ModuleEntry = {
   tone: 'sky',
   description: 'Period-over-period analysis for any station',
   sidebarGroup: 'Dashboards',
+  category: 'DASHBOARDS',
   suggestedPrompts: [
     'Plot Sabarmati BOD over 12 months',
     'PM10 trend at Vatva over 30 days',
@@ -191,6 +211,7 @@ const OPEN_MAKER_CHECKER_QUEUE: ModuleEntry = {
   tone: 'emerald',
   description: 'Pending approvals awaiting your review',
   sidebarGroup: 'Workflows',
+  category: 'INSPECTION',
   suggestedPrompts: [
     "What's the oldest pending item?",
     'Items breaching SLA',
@@ -212,6 +233,7 @@ const OPEN_BROADCAST: ModuleEntry = {
   tone: 'violet',
   description: 'Compose statewide announcements',
   sidebarGroup: 'Tools',
+  category: 'DASHBOARDS',
   suggestedPrompts: [
     'Summarise what I\'m seeing',
     'Top items needing attention',
@@ -234,6 +256,8 @@ const OPEN_CONSENT_MANAGEMENT: ModuleEntry = {
   tone: 'indigo',
   description: 'AI-verified applications · approval queue · renewal radar',
   sidebarGroup: 'Dashboards',
+  category: 'CONSENT',
+  isParent: true,
   suggestedPrompts: [
     'How many applications are awaiting human review?',
     'AI flagged issues today',
@@ -256,6 +280,7 @@ const OPEN_AI_VERIFICATION: ModuleEntry = {
   tone: 'violet',
   description: 'Per-document AI review with approve / return actions',
   sidebarGroup: 'Workflows',
+  category: 'CONSENT',
   suggestedPrompts: [
     'Applications with missing documents',
     'Which consents have the most AI-flagged issues?',
@@ -274,6 +299,7 @@ const OPEN_APPLICATION_QUEUE: ModuleEntry = {
   tone: 'indigo',
   description: 'Consent applications awaiting processing',
   sidebarGroup: 'Workflows',
+  category: 'CONSENT',
   suggestedPrompts: [
     'Applications waiting >30 days',
     'Renewals due next 30 days',
@@ -291,6 +317,7 @@ const OPEN_CONSENT_PIPELINE: ModuleEntry = {
   tone: 'sky',
   description: 'End-to-end consent application status',
   sidebarGroup: 'Dashboards',
+  category: 'CONSENT',
   suggestedPrompts: [
     'Capacity vs declared consent outliers',
     'CTOs expiring this quarter',
@@ -308,6 +335,7 @@ const OPEN_RENEWAL_RADAR: ModuleEntry = {
   tone: 'amber',
   description: 'Industries with upcoming consent renewals',
   sidebarGroup: 'Dashboards',
+  category: 'CONSENT',
   suggestedPrompts: [
     "What's expiring in 30 days?",
     'By district',
@@ -325,6 +353,7 @@ const OPEN_CAPACITY_VS_CONSENT: ModuleEntry = {
   tone: 'teal',
   description: 'Compare actual output against consented limits',
   sidebarGroup: 'Tools',
+  category: 'CONSENT',
   suggestedPrompts: [
     'Summarise what I\'m seeing',
     'Top items needing attention',
@@ -341,6 +370,7 @@ const OPEN_DOCUMENT_COMPLETENESS: ModuleEntry = {
   tone: 'emerald',
   description: 'Missing documents by application batch',
   sidebarGroup: 'Tools',
+  category: 'CONSENT',
   suggestedPrompts: [
     'Summarise what I\'m seeing',
     'Top items needing attention',
@@ -357,6 +387,7 @@ const OPEN_CONSENT_DRAFT: ModuleEntry = {
   tone: 'violet',
   description: 'AI-assisted consent order drafting',
   sidebarGroup: 'Workflows',
+  category: 'CONSENT',
   suggestedPrompts: [
     'Summarise what I\'m seeing',
     'Top items needing attention',
@@ -381,6 +412,7 @@ const OPEN_OCEMS_LIVE_GRID: ModuleEntry = {
   tone: 'sky',
   description: 'Real-time online continuous emissions monitoring',
   sidebarGroup: 'Dashboards',
+  category: 'PROGRAMS',
   suggestedPrompts: [
     'Which OCEMS stations are exceeding now?',
     'Group exceedances by parameter',
@@ -402,6 +434,7 @@ const OPEN_EXCEEDANCE_FEED: ModuleEntry = {
   tone: 'rose',
   description: 'Live stream of norm exceedances',
   sidebarGroup: 'Workflows',
+  category: 'PROGRAMS',
   suggestedPrompts: [
     'Latest CRITICAL exceedances',
     'Group by industry',
@@ -423,6 +456,7 @@ const OPEN_PREDICTED_EXCEEDANCE: ModuleEntry = {
   tone: 'amber',
   description: 'ML-based exceedance forecasts by station',
   sidebarGroup: 'Tools',
+  category: 'PROGRAMS',
   suggestedPrompts: [
     'Summarise what I\'m seeing',
     'Top items needing attention',
@@ -443,6 +477,7 @@ const OPEN_VOC_CLUSTER_MONITOR: ModuleEntry = {
   tone: 'violet',
   description: 'Volatile organic compound cluster monitoring',
   sidebarGroup: 'Dashboards',
+  category: 'PROGRAMS',
   suggestedPrompts: [
     'Top benzene exceedances',
     'Compare Vatva vs Ankleshwar VOC clusters',
@@ -464,6 +499,7 @@ const OPEN_CETP_SCORECARD: ModuleEntry = {
   tone: 'teal',
   description: 'Compliance scorecard for common effluent treatment plants',
   sidebarGroup: 'Dashboards',
+  category: 'PROGRAMS',
   suggestedPrompts: [
     'Which CETPs reported bypass?',
     'Compare AHSPA vs Naroda Enviro',
@@ -485,6 +521,7 @@ const OPEN_AAQM_MONITOR: ModuleEntry = {
   tone: 'cyan',
   description: 'Ambient air quality monitoring station overview',
   sidebarGroup: 'Dashboards',
+  category: 'PROGRAMS',
   suggestedPrompts: [
     'Worst PM2.5 districts today',
     'Compare Vapi vs Ankleshwar AAQM',
@@ -506,6 +543,7 @@ const OPEN_FESTIVAL_PLANNER: ModuleEntry = {
   tone: 'fuchsia',
   description: 'Seasonal pollution monitoring plan builder',
   sidebarGroup: 'Tools',
+  category: 'PROGRAMS',
   suggestedPrompts: [
     'Plan Ganesh Utsav 2026 monitoring',
     'Compare 2024 vs 2025 Sabarmati BOD spikes',
@@ -531,6 +569,7 @@ const OPEN_INSPECTION_PRIORITISATION: ModuleEntry = {
   tone: 'indigo',
   description: 'Risk-ranked list of industries due for inspection',
   sidebarGroup: 'Dashboards',
+  category: 'INSPECTION',
   suggestedPrompts: [
     'Top 5 industries to inspect this week',
     'Who has the most overdue inspections?',
@@ -552,6 +591,7 @@ const OPEN_INSPECTION_SCHEDULER: ModuleEntry = {
   tone: 'sky',
   description: 'Plan and assign upcoming field inspections',
   sidebarGroup: 'Tools',
+  category: 'INSPECTION',
   suggestedPrompts: [
     'Summarise what I\'m seeing',
     'Top items needing attention',
@@ -572,6 +612,7 @@ const OPEN_ONSITE_CHECKLIST: ModuleEntry = {
   tone: 'amber',
   description: 'Digital inspection checklist for field use',
   sidebarGroup: 'Tools',
+  category: 'INSPECTION',
   suggestedPrompts: [
     'Summarise what I\'m seeing',
     'Top items needing attention',
@@ -592,6 +633,7 @@ const OPEN_DRAFT_NOTICE: ModuleEntry = {
   tone: 'rose',
   description: 'AI-drafted show-cause and closure notices',
   sidebarGroup: 'Workflows',
+  category: 'INSPECTION',
   suggestedPrompts: [
     'Draft a show-cause for the top exceedance',
     "Last week's similar notices for reference",
@@ -613,6 +655,7 @@ const OPEN_VIOLATIONS_REGISTER: ModuleEntry = {
   tone: 'violet',
   description: 'Searchable log of all recorded violations',
   sidebarGroup: 'Dashboards',
+  category: 'INSPECTION',
   suggestedPrompts: [
     'Critical violations this quarter',
     'Repeat offenders',
@@ -634,6 +677,8 @@ const OPEN_RISK_BASED_INSPECTIONS: ModuleEntry = {
   tone: 'rose',
   description: 'AI-suggested inspection priorities',
   sidebarGroup: 'Workflows',
+  category: 'INSPECTION',
+  isParent: true,
   suggestedPrompts: [
     'How many AI-suggested inspections this week?',
     'Top 5 industries to inspect now',
@@ -659,6 +704,7 @@ const OPEN_COMPLAINT_INBOX: ModuleEntry = {
   tone: 'indigo',
   description: 'Incoming citizen pollution complaints',
   sidebarGroup: 'Workflows',
+  category: 'COMPLAINTS',
   suggestedPrompts: [
     'Show me critical complaints today',
     'Anonymous complaints last week',
@@ -680,6 +726,7 @@ const OPEN_AUTO_TRIAGE: ModuleEntry = {
   tone: 'amber',
   description: 'AI-classified complaint severity distribution',
   sidebarGroup: 'Tools',
+  category: 'COMPLAINTS',
   suggestedPrompts: [
     'Summarise what I\'m seeing',
     'Top items needing attention',
@@ -700,6 +747,7 @@ const OPEN_COMPLAINT_HOTSPOT_MAP: ModuleEntry = {
   tone: 'rose',
   description: 'Geographical clustering of complaint hotspots',
   sidebarGroup: 'Dashboards',
+  category: 'COMPLAINTS',
   suggestedPrompts: [
     'Top 3 hotspots right now',
     'Compare district hotspots over 30 days',
@@ -721,6 +769,7 @@ const OPEN_INDUSTRY_CORRELATION: ModuleEntry = {
   tone: 'teal',
   description: 'Link complaints to responsible industries',
   sidebarGroup: 'Tools',
+  category: 'COMPLAINTS',
   suggestedPrompts: [
     'Summarise what I\'m seeing',
     'Top items needing attention',
@@ -741,6 +790,7 @@ const OPEN_CITIZEN_RESPONSE_TRACKER: ModuleEntry = {
   tone: 'violet',
   description: 'Track reply status for every citizen complaint',
   sidebarGroup: 'Workflows',
+  category: 'COMPLAINTS',
   suggestedPrompts: [
     'Complaints aging past SLA',
     'Show only IN_PROGRESS items I own',
@@ -774,6 +824,7 @@ const OPEN_INDUSTRY_DEEP_DIVE: ModuleEntry = {
   tone: 'slate',
   description: 'Full profile for any registered industry',
   sidebarGroup: 'Tools',
+  category: 'SETTINGS',
   suggestedPrompts: [
     'Recent violations for this industry',
     'Inspection history',
@@ -795,6 +846,7 @@ const OPEN_NOTIFICATIONS: ModuleEntry = {
   tone: 'sky',
   description: 'System alerts and action reminders',
   sidebarGroup: 'Tools',
+  category: 'SETTINGS',
   suggestedPrompts: [
     'What needs my attention?',
     'Mark all read',
@@ -816,6 +868,7 @@ const OPEN_REPORT_EXPORT: ModuleEntry = {
   tone: 'slate',
   description: 'Export dashboards and data to PDF / Excel',
   sidebarGroup: 'Tools',
+  category: 'SETTINGS',
   suggestedPrompts: [
     'Summarise what I\'m seeing',
     'Top items needing attention',
@@ -882,6 +935,18 @@ export function findModule(id: string): ModuleEntry | undefined {
 /** Filter modules visible to a given role */
 export function modulesForRole(role: Role): ModuleEntry[] {
   return moduleRegistry.filter((m) => m.allowedRoles.includes(role))
+}
+
+/** Filter modules by category, optionally also gating by role */
+export function modulesForCategory(category: Category, role?: Role): ModuleEntry[] {
+  return moduleRegistry.filter(
+    (m) => m.category === category && (!role || m.allowedRoles.includes(role)),
+  )
+}
+
+/** Return only parent/hub canvases visible to a role */
+export function parentModulesForRole(role: Role): ModuleEntry[] {
+  return moduleRegistry.filter((m) => m.isParent && m.allowedRoles.includes(role))
 }
 
 const DEFAULT_PROMPTS: string[] = [

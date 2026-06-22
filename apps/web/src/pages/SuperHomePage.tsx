@@ -41,8 +41,9 @@ import { CallStatusPill } from '../components/CallStatusPill.js'
 import { CanvasCallButton } from '../components/CanvasCallButton.js'
 import { ChatBubble, TypingDots } from '../components/ChatBubble.js'
 import GpcbLogo from '../components/GpcbLogo.js'
-import { modulesForRole, findModule, suggestedPromptsFor } from '../nlp/moduleRegistry.js'
-import type { ModuleEntry } from '../nlp/moduleRegistry.js'
+import { modulesForRole, findModule, suggestedPromptsFor, modulesForCategory, parentModulesForRole } from '../nlp/moduleRegistry.js'
+import type { ModuleEntry, Category } from '../nlp/moduleRegistry.js'
+import type { Role } from '@gpcsk/shared'
 import { CanvasSaathiSplit } from '../canvas/CanvasSaathiSplit.js'
 
 // ── Design tokens ──────────────────────────────────────────────────────────
@@ -190,9 +191,40 @@ interface SidebarProps {
   onClose: () => void
 }
 
+// ── Sidebar category section config ───────────────────────────────────────
+
+interface SidebarSection {
+  label: string
+  emoji: string
+  category: Category
+  /** Roles that can see this section; undefined = all */
+  visibleTo?: Role[]
+}
+
+const SIDEBAR_SECTIONS: SidebarSection[] = [
+  { label: 'War Room',                emoji: '⭐', category: 'WAR_ROOM' },
+  { label: 'Programs',                emoji: '🔬', category: 'PROGRAMS' },
+  { label: 'Consent Management',      emoji: '📝', category: 'CONSENT' },
+  { label: 'Inspections & Enforcement', emoji: '🔍', category: 'INSPECTION' },
+  {
+    label: 'Complaints',
+    emoji: '📞',
+    category: 'COMPLAINTS',
+    visibleTo: ['COMPLAINTS_OFFICER', 'SENIOR_REVIEWER'],
+  },
+  {
+    label: 'Dashboards',
+    emoji: '📊',
+    category: 'DASHBOARDS',
+    visibleTo: ['SENIOR_REVIEWER'],
+  },
+]
+
 function Sidebar({ showSidebar, onClose }: SidebarProps) {
-  const { threads, currentThread, newThread, openThread } = useChat()
+  const { threads, currentThread, newThread, openThread, openCanvas } = useChat()
+  const { user } = useAuth()
   const [query, setQuery] = useState('')
+  const [collapsedSections, setCollapsedSections] = useState<Set<Category>>(new Set())
 
   const filteredThreads = threads.filter((t) =>
     t.title.toLowerCase().includes(query.toLowerCase()),
@@ -208,6 +240,21 @@ function Sidebar({ showSidebar, onClose }: SidebarProps) {
     openThread(t.id)
     onClose()
   }
+
+  function toggleSection(cat: Category) {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev)
+      if (next.has(cat)) next.delete(cat)
+      else next.add(cat)
+      return next
+    })
+  }
+
+  // Modules grouped by visible section for this user's role
+  const role = user?.role
+  const visibleSections = SIDEBAR_SECTIONS.filter(
+    (s) => !s.visibleTo || (role && s.visibleTo.includes(role)),
+  )
 
   return (
     <aside
@@ -245,8 +292,54 @@ function Sidebar({ showSidebar, onClose }: SidebarProps) {
         </div>
       </div>
 
-      {/* Chat history */}
+      {/* Scrollable: canvas sections + chat history */}
       <div className="flex-1 overflow-y-auto px-3 mt-3 pb-3">
+        {/* Category sections */}
+        {role && visibleSections.map((section) => {
+          const sectionModules = modulesForCategory(section.category, role)
+          if (!sectionModules.length) return null
+          const collapsed = collapsedSections.has(section.category)
+          return (
+            <div key={section.category} className="mb-3">
+              <button
+                type="button"
+                onClick={() => toggleSection(section.category)}
+                className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-surface-page transition group"
+              >
+                <span className="text-[13px]">{section.emoji}</span>
+                <span className="flex-1 text-left text-[11px] uppercase tracking-wider font-bold text-txt-secondary">
+                  {section.label}
+                </span>
+                <Lucide.ChevronDown
+                  className={`w-3.5 h-3.5 text-txt-tertiary transition-transform ${collapsed ? '-rotate-90' : ''}`}
+                />
+              </button>
+              {!collapsed && (
+                <div className="mt-0.5 ml-1">
+                  {sectionModules.map((m) => {
+                    const Icon = iconByName(m.icon)
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => { openCanvas(m.id); onClose() }}
+                        className="w-full text-left flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12px] text-txt-primary hover:bg-surface-page transition"
+                      >
+                        <Icon className="w-3.5 h-3.5 text-txt-tertiary flex-shrink-0" />
+                        <span className="truncate">{m.label.en}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })}
+
+        {/* Divider before chat history */}
+        <div className="mt-1 mb-3 border-t border-bdr" />
+
+        {/* Chat history */}
         {threads.length === 0 ? (
           <div className="px-3 py-4 text-[11px] text-txt-tertiary leading-relaxed">
             No conversations yet. Ask Saathi anything to begin.
@@ -508,11 +601,17 @@ function ContentArea() {
   const role = user?.role ?? 'SENIOR_REVIEWER'
   const chips = SUGGESTIONS_BY_ROLE[role] ?? []
 
-  // Modules for this role, excluding shared contextual ones
-  const HIDDEN_FROM_GRID = new Set(['OPEN_INDUSTRY_DEEP_DIVE', 'OPEN_NOTIFICATIONS', 'OPEN_REPORT_EXPORT'])
-  const modules: ModuleEntry[] = user
-    ? modulesForRole(user.role).filter((m) => !HIDDEN_FROM_GRID.has(m.id))
+  // Home grid: War Room first, then parent canvases (excluding SETTINGS)
+  const warRoomEntry = user
+    ? modulesForRole(user.role).find((m) => m.id === 'OPEN_WAR_ROOM')
+    : undefined
+  const parentModules: ModuleEntry[] = user
+    ? parentModulesForRole(user.role)
     : []
+  const homeGridModules: ModuleEntry[] = [
+    ...(warRoomEntry ? [warRoomEntry] : []),
+    ...parentModules.filter((m) => m.id !== 'OPEN_WAR_ROOM'),
+  ]
 
   function handleSend(text: string) {
     if (!text.trim() || busy) return
@@ -527,7 +626,7 @@ function ContentArea() {
     <>
       {greetedView ? (
         <GreetingPanel
-          modules={modules}
+          modules={homeGridModules}
           chips={chips}
           onSend={handleSend}
           onVoice={handleVoice}
@@ -551,7 +650,17 @@ interface GreetingPanelProps {
 
 function GreetingPanel({ modules, chips, onSend, onVoice }: GreetingPanelProps) {
   const { user } = useAuth()
+  const { token } = useAuth()
   const { openCanvas } = useChat()
+  const [warRoomLive, setWarRoomLive] = useState(false)
+
+  useEffect(() => {
+    if (!token) return
+    api<{ criticalCount: number }>('/api/stats/war-room', { token })
+      .then((r) => setWarRoomLive((r.criticalCount ?? 0) > 0))
+      .catch(() => {/* silent — badge stays off */})
+  }, [token])
+
   // For names like "Dr. K. Trivedi" we want "Dr. Trivedi" — skip middle initials.
   // For "Anjali Patel" we want just "Anjali". Honorific is anything ending in "."
   const greetingName = (() => {
@@ -610,6 +719,7 @@ function GreetingPanel({ modules, chips, onSend, onVoice }: GreetingPanelProps) 
                 <FeatureCard
                   key={m.id}
                   module={m}
+                  liveRing={m.id === 'OPEN_WAR_ROOM' && warRoomLive}
                   onClick={() => openCanvas(m.id)}
                 />
               ))}
@@ -647,9 +757,10 @@ function GreetingPanel({ modules, chips, onSend, onVoice }: GreetingPanelProps) 
 interface FeatureCardProps {
   module: ModuleEntry
   onClick: () => void
+  liveRing?: boolean
 }
 
-function FeatureCard({ module: m, onClick }: FeatureCardProps) {
+function FeatureCard({ module: m, onClick, liveRing }: FeatureCardProps) {
   const tone = m.tone ?? 'indigo'
   const t = TONES[tone] ?? TONES['indigo']!
   const Icon = iconByName(m.icon)
@@ -657,8 +768,18 @@ function FeatureCard({ module: m, onClick }: FeatureCardProps) {
     <button
       type="button"
       onClick={onClick}
-      className={`text-left rounded-2xl bg-white border border-bdr-light p-4 transition-all hover:shadow-card ${t.ring} group`}
+      className={`relative text-left rounded-2xl bg-white border p-4 transition-all hover:shadow-card group ${
+        liveRing
+          ? 'border-rose-400 ring-2 ring-rose-300/60 animate-pulse-ring'
+          : `border-bdr-light ${t.ring}`
+      }`}
     >
+      {liveRing && (
+        <span className="absolute top-2.5 right-2.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-bold uppercase tracking-wider leading-none">
+          <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping inline-block" />
+          LIVE
+        </span>
+      )}
       <div
         className={`w-11 h-11 rounded-2xl ${t.bg} ${t.fg} flex items-center justify-center mb-3`}
       >
