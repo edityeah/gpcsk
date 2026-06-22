@@ -1,9 +1,10 @@
 /**
- * CPCB AAQM ingest via OpenAQ v3 — Gujarat stations only.
+ * CPCB AAQM ingest — Gujarat stations only.
  *
  * Fallback chain:
- *   1. OpenAQ v3 API (countries_id=9, bbox filter)
- *   2. REAL_NAME_SYNTHETIC_READINGS: 35 real Gujarat CPCB AAQM stations with synthetic readings
+ *   1. WAQI (aqicn.org) — primary. Aggregates CPCB CAAQMS data with hourly refresh.
+ *   2. OpenAQ v3 API (countries_id=9, bbox filter) — needs API key, retired v2.
+ *   3. REAL_NAME_SYNTHETIC_READINGS: 35 real Gujarat CPCB AAQM stations with synthetic readings.
  *
  * Gujarat bounding box:
  *   lat: 20.1 – 24.8
@@ -50,6 +51,92 @@ const GUJARAT_BBOX = {
 }
 
 const OPENAQ_BASE = 'https://api.openaq.org/v3'
+const WAQI_BASE   = 'https://api.waqi.info'
+
+/** WAQI canonical parameter keys → our parameter keys. */
+const WAQI_PARAM_MAP: Record<string, { key: string; unit: string }> = {
+  pm25: { key: 'PM2_5', unit: 'µg/m³' },
+  pm10: { key: 'PM10',  unit: 'µg/m³' },
+  so2:  { key: 'SO2',   unit: 'µg/m³' },
+  no2:  { key: 'NOx',   unit: 'µg/m³' },
+  o3:   { key: 'O3',    unit: 'µg/m³' },
+  co:   { key: 'CO',    unit: 'mg/m³' },
+  nh3:  { key: 'NH3',   unit: 'µg/m³' },
+}
+
+interface WaqiBboxStation {
+  uid: number
+  station: { name: string; time: string; geo?: [number, number] }
+  lat: number
+  lon: number
+  aqi: string | number
+}
+
+interface WaqiFeed {
+  status: 'ok' | 'error'
+  data: {
+    aqi: number
+    idx: number
+    city: { name: string; geo: [number, number] }
+    iaqi: Record<string, { v: number }>
+    time: { iso: string; s: string }
+  }
+}
+
+/**
+ * Fetch Gujarat AAQM stations from WAQI.
+ * Two-step:
+ *   1. bbox → list of station uids
+ *   2. per-uid /feed/@<uid> → full parameter array
+ */
+async function fetchWaqiGujaratStations(token: string): Promise<ParsedLocation[]> {
+  // bbox: latlng=south,west,north,east (Gujarat 20-25 lat, 68-75 lng)
+  const bboxUrl = `${WAQI_BASE}/map/bounds/?latlng=20.1,68.0,24.8,74.5&token=${token}`
+  const bboxRes = await fetch(bboxUrl)
+  if (!bboxRes.ok) throw new Error(`WAQI bbox ${bboxRes.status}`)
+  const bboxJson = await bboxRes.json() as { status: string; data: WaqiBboxStation[] }
+  if (bboxJson.status !== 'ok') throw new Error(`WAQI status ${bboxJson.status}`)
+
+  const stations = bboxJson.data
+  // Filter to Gujarat lat/lng (bbox can leak into Maharashtra/Rajasthan border towns).
+  // Also exclude known non-Gujarat city names that fall inside the bbox.
+  const NON_GUJARAT_KEYWORDS = ['Udaipur', 'Nashik', 'Mumbai', 'Pune', 'Indore', 'Ujjain', 'Jodhpur', 'Sirohi', 'Banswara', 'Dungarpur']
+  const inGujarat = stations.filter(s => {
+    if (s.lat < GUJARAT_BBOX.latMin || s.lat > GUJARAT_BBOX.latMax) return false
+    if (s.lon < GUJARAT_BBOX.lngMin || s.lon > GUJARAT_BBOX.lngMax) return false
+    const name = s.station?.name ?? ''
+    return !NON_GUJARAT_KEYWORDS.some(k => name.includes(k))
+  })
+
+  const result: ParsedLocation[] = []
+  for (const s of inGujarat) {
+    try {
+      const feedRes = await fetch(`${WAQI_BASE}/feed/@${s.uid}/?token=${token}`)
+      if (!feedRes.ok) continue
+      const feed = await feedRes.json() as WaqiFeed
+      if (feed.status !== 'ok') continue
+      const iaqi = feed.data.iaqi ?? {}
+      const ts   = feed.data.time?.iso ?? new Date().toISOString()
+      const params: ParsedLocation['parameters'] = []
+      for (const [waqiKey, obj] of Object.entries(iaqi)) {
+        const mapped = WAQI_PARAM_MAP[waqiKey]
+        if (!mapped) continue
+        params.push({ paramKey: mapped.key, unit: mapped.unit, lastValue: obj.v, lastUpdated: ts })
+      }
+      if (params.length === 0) continue
+      result.push({
+        id: s.uid,
+        name: s.station.name.replace(/, India$/, ''),
+        lat: s.lat,
+        lng: s.lon,
+        parameters: params,
+      })
+    } catch {
+      // skip this station, continue with the rest
+    }
+  }
+  return result
+}
 
 /** Map OpenAQ parameter names → our canonical parameter keys */
 const PARAM_MAP: Record<string, string> = {
@@ -223,16 +310,30 @@ export async function ingestCpcbAaqm(): Promise<void> {
   try {
     let gujaratLocations: ParsedLocation[] = []
 
-    // Try OpenAQ v3 first
-    try {
-      logger.info('AAQM ingest: fetching all India locations from OpenAQ v3…')
-      const allLocations = await fetchGujaratLocations()
-      logger.info(`AAQM ingest: got ${allLocations.length} India locations from OpenAQ`)
-      gujaratLocations = parseGujaratLocations(allLocations)
-      logger.info(`AAQM ingest: ${gujaratLocations.length} Gujarat AAQM stations found via OpenAQ`)
-    } catch (fetchErr) {
-      logger.warn({ err: fetchErr }, 'AAQM ingest: OpenAQ API failed — using curated real-name fallback')
-      usedFallback = true
+    // Try WAQI first (primary path: free token + better India coverage than OpenAQ)
+    const waqiToken = process.env['WAQI_TOKEN'] ?? ''
+    if (waqiToken && !waqiToken.startsWith('replace-me')) {
+      try {
+        logger.info('AAQM ingest: fetching Gujarat stations from WAQI…')
+        gujaratLocations = await fetchWaqiGujaratStations(waqiToken)
+        logger.info(`AAQM ingest: ${gujaratLocations.length} Gujarat AAQM stations from WAQI`)
+      } catch (fetchErr) {
+        logger.warn({ err: fetchErr }, 'AAQM ingest: WAQI failed — trying OpenAQ')
+      }
+    }
+
+    // Then try OpenAQ as backup
+    if (gujaratLocations.length === 0) {
+      try {
+        logger.info('AAQM ingest: fetching all India locations from OpenAQ v3…')
+        const allLocations = await fetchGujaratLocations()
+        logger.info(`AAQM ingest: got ${allLocations.length} India locations from OpenAQ`)
+        gujaratLocations = parseGujaratLocations(allLocations)
+        logger.info(`AAQM ingest: ${gujaratLocations.length} Gujarat AAQM stations found via OpenAQ`)
+      } catch (fetchErr) {
+        logger.warn({ err: fetchErr }, 'AAQM ingest: OpenAQ API failed — using curated real-name fallback')
+        usedFallback = true
+      }
     }
 
     const now = new Date()
