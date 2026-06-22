@@ -446,6 +446,7 @@ export async function seedSensors(prisma: PrismaClient): Promise<void> {
           parameters: def.parameters,
           status,
           industryId: industryId ?? null,
+          dataSource: 'SYNTHETIC',
         },
       })
       id = created.id

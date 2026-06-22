@@ -399,9 +399,11 @@ model MonitoringStation {
   lat        Float?
   lng        Float?
   parameters String[]
-  status     String                @default("active")
-  createdAt  DateTime              @default(now())
-  updatedAt  DateTime              @updatedAt
+  status         String                @default("active")
+  dataSource     String                @default("SYNTHETIC") // 'CPCB_LIVE' | 'GPCB_REPORT' | 'REAL_NAME_SYNTHETIC_READINGS' | 'SYNTHETIC'
+  lastIngestedAt DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
 
   industry    Industry?       @relation(fields: [industryId], references: [id], onDelete: SetNull)
   readings    SensorReading[]
@@ -426,6 +428,16 @@ model SensorReading {
   exceedances Exceedance[]
 
   @@index([stationId, parameter, timestamp])
+}
+
+model IngestRun {
+  id               String    @id @default(cuid())
+  source           String    // 'CPCB_AAQM' | 'CPCB_CEMS' | 'MANUAL'
+  startedAt        DateTime  @default(now())
+  finishedAt       DateTime?
+  stationsTouched  Int       @default(0)
+  readingsInserted Int       @default(0)
+  error            String?
 }
 
 model Exceedance {
