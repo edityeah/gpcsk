@@ -18,6 +18,7 @@ import { aiRouter } from './ai/router.js'
 import { broadcastsRouter } from './broadcasts/router.js'
 import { notificationsRouter } from './notifications/router.js'
 import { voiceRouter } from './voice/router.js'
+import { programsRouter } from './programs/router.js'
 
 export function buildApp(): Express {
   const app = express()
@@ -41,6 +42,7 @@ export function buildApp(): Express {
   app.use('/api/voice', voiceRouter)
   app.use('/api/broadcasts', broadcastsRouter)
   app.use('/api/notifications', notificationsRouter)
+  app.use('/api/programs', programsRouter)
 
   return app
 }

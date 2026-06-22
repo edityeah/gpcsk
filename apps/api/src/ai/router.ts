@@ -26,6 +26,7 @@ import { requireAuth } from '../auth/middleware.js'
 import { logger } from '../logger.js'
 import { buildOpenAiTools, findAction, dataTools, type ChartSpec } from './actionRegistry.js'
 import { retrieve } from './rag.js'
+import { computeProgramStats } from '../programs/router.js'
 import type { Role } from '@gpcsk/shared'
 
 export const aiRouter = Router()
@@ -326,6 +327,18 @@ async function handleDataTool(
 
       if (topN) result = result.slice(0, topN)
       return result
+    }
+
+    case 'queryAllPrograms': {
+      return computeProgramStats()
+    }
+
+    case 'queryProgramHealth': {
+      const programId = args['programId'] as string
+      if (!programId) return { error: 'programId is required' }
+      const results = await computeProgramStats([programId])
+      if (results.length === 0) return { error: `Unknown programId: ${programId}` }
+      return results[0]
     }
 
     default:

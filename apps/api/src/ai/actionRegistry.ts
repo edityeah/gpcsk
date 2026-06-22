@@ -573,6 +573,37 @@ export const dataTools = [
   {
     type: 'function' as const,
     function: {
+      name: 'queryAllPrograms',
+      description:
+        'Query the full catalog of GPCB monitoring programs (OCEMS, AAQM, Water Quality, VOC Clusters, CETP Monitoring, and placeholder programs) with live summary stats — station count, active station count, current pending exceedances, and 30-day anomaly count. Use this when the user asks "list all programs", "program health overview", or "what monitoring programs does GPCB run".',
+      parameters: {
+        type: 'object' as const,
+        properties: {},
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'queryProgramHealth',
+      description:
+        'Query live health summary for a single GPCB monitoring program by its ID. Returns stationCount, activeStationCount, currentExceedancesCount, and recentAnomalyCount30d. Valid programIds: OCEMS, AAQM, WATER, VOC, CETP, NOISE, HAZARDOUS_WASTE, FESTIVAL. Use this when the user asks about the health of a specific program, e.g. "how many OCEMS stations are exceeding right now?" or "what is the AAQM program status?".',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          programId: {
+            type: 'string',
+            description: 'Program identifier',
+            enum: ['OCEMS', 'AAQM', 'WATER', 'VOC', 'CETP', 'NOISE', 'HAZARDOUS_WASTE', 'FESTIVAL'],
+          },
+        },
+        required: ['programId'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
       name: 'queryDistrictCriticality',
       description:
         'Query per-district criticality scores for Gujarat. Returns an array of {districtId, districtName, criticality, breakdown} sorted by criticality descending. Use this to answer "which district is the hottest?" or "top 3 most critical districts right now". Call before renderChart for district comparisons.',
