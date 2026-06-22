@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient, type ViolationSource, type ViolationSeverity, type DispositionState } from '@prisma/client'
+import { Prisma, type PrismaClient, type ViolationSource, type ViolationSeverity, type DispositionState, type InspectionType } from '@prisma/client'
 
 // ── Deterministic pseudo-random helper ───────────────────────────────────────
 // Produces a number in [0, 1) from a string seed + integer counter.
@@ -128,6 +128,14 @@ const VIOLATION_DISPOSITIONS = [
   'RESOLVED',            'RESOLVED',
 ] as const
 
+// InspectionType distribution: 50% ROUTINE, 30% RISK_BASED, 15% COMPLAINT_DRIVEN, 5% AUTO_SENSOR_DROPOUT
+const INSPECTION_TYPES = [
+  'ROUTINE', 'ROUTINE', 'ROUTINE', 'ROUTINE', 'ROUTINE', 'ROUTINE', 'ROUTINE', 'ROUTINE', 'ROUTINE', 'ROUTINE',
+  'RISK_BASED', 'RISK_BASED', 'RISK_BASED', 'RISK_BASED', 'RISK_BASED', 'RISK_BASED',
+  'COMPLAINT_DRIVEN', 'COMPLAINT_DRIVEN', 'COMPLAINT_DRIVEN',
+  'AUTO_SENSOR_DROPOUT',
+] as const
+
 // ── Main seed function ────────────────────────────────────────────────────────
 
 export async function seedInspections(prisma: PrismaClient): Promise<void> {
@@ -179,6 +187,7 @@ export async function seedInspections(prisma: PrismaClient): Promise<void> {
         state: 'COMPLETED',
         observations: obsSet as unknown as Prisma.InputJsonValue,
         photos: [] as unknown as Prisma.InputJsonValue,
+        inspectionType: pick(INSPECTION_TYPES, seed, 6) as InspectionType,
       },
     })
   }
@@ -205,6 +214,7 @@ export async function seedInspections(prisma: PrismaClient): Promise<void> {
         state: 'SCHEDULED',
         observations: {},
         photos: [] as unknown as Prisma.InputJsonValue,
+        inspectionType: pick(INSPECTION_TYPES, seed, 4) as InspectionType,
       },
     })
   }

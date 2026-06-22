@@ -10,6 +10,8 @@ import { seedCetps } from './cetps.js'
 import { seedKnowledge } from './knowledge.js'
 import { seedEnforcementActions } from './enforcement.js'
 import { seedNotifications } from './notifications.js'
+import { seedStationUptime } from './uptime.js'
+import { seedRiskSuggestions } from './riskSuggestions.js'
 import { logger } from '../logger.js'
 
 async function main() {
@@ -66,6 +68,10 @@ async function main() {
     `${exceedanceCount} exceedances seeded`
   )
 
+  logger.info('seeding station uptime stats…')
+  const uptimeCount = await seedStationUptime(prisma)
+  logger.info(`station uptime done: ${uptimeCount} StationUptimeStat rows seeded`)
+
   logger.info('seeding CETPs + monthly monitoring reports…')
   await seedCetps(prisma)
   const [cetpCount, cetpReportCount] = await Promise.all([
@@ -89,6 +95,10 @@ async function main() {
     prisma.auditLog.count(),
   ])
   logger.info(`enforcement done: ${enforcementCount} enforcement actions, ${auditCount} total audit log entries seeded`)
+
+  logger.info('seeding risk-based suggestion queue…')
+  const riskSuggestionCount = await seedRiskSuggestions(prisma)
+  logger.info(`risk suggestions done: ${riskSuggestionCount} RiskBasedSuggestion rows seeded`)
 
   logger.info('seeding notifications…')
   await seedNotifications(prisma)

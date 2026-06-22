@@ -135,6 +135,93 @@ function hwAuthParameters(industryName: string): Record<string, unknown> {
   }
 }
 
+// ── AI document verification builder ─────────────────────────────────────────
+
+type DocStatus = 'OK' | 'BLANK' | 'MISSING' | 'BLURRED' | 'UNCLEAR' | 'UNSCANNED'
+
+interface DocEntry {
+  name: string
+  status: DocStatus
+  aiNote?: string
+}
+
+const DOC_NAMES = [
+  'Layout Plan',
+  'CA Certificate',
+  'EIA Report',
+  'Fee Receipt',
+  'Site Photograph',
+  'NOC Local Body',
+  'Process Flowchart',
+] as const
+
+const ISSUE_STATUSES: DocStatus[] = ['BLANK', 'MISSING', 'BLURRED', 'UNCLEAR', 'UNSCANNED']
+const ISSUE_NOTES: Record<DocStatus, string[]> = {
+  BLANK:    ['Document page appears completely blank', 'Blank sheet uploaded instead of document'],
+  MISSING:  ['Document not attached', 'Required document missing from submission'],
+  BLURRED:  ['Image resolution too low to verify content', 'Scan quality insufficient'],
+  UNCLEAR:  ['Document content not legible', 'Poor photocopy quality'],
+  UNSCANNED: ['Physical document not yet scanned', 'Upload pending'],
+  OK:       [],
+}
+
+function buildDocVerification(key: string): Record<string, unknown> {
+  const f = seededFloat(key)
+
+  // Determine how many docs have issues based on distribution:
+  // ~60% all OK, ~25% 1-2 issues, ~10% 4+ issues, ~5% minor
+  let issueCount: number
+  if (f < 0.60) {
+    issueCount = 0
+  } else if (f < 0.85) {
+    issueCount = Math.floor(seededFloat(key + '-ic') * 2) + 1 // 1 or 2
+  } else if (f < 0.95) {
+    issueCount = Math.floor(seededFloat(key + '-ic') * 3) + 4 // 4, 5, or 6
+  } else {
+    issueCount = 1 // minor: exactly 1 issue
+  }
+
+  // Shuffle doc names deterministically to decide which ones get issues
+  const shuffled = [...DOC_NAMES] as string[]
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = seededInt(seededFloat(key + `-sh${i}`), i + 1)
+    const tmp = shuffled[i] as string
+    shuffled[i] = shuffled[j] as string
+    shuffled[j] = tmp
+  }
+
+  const issueSet = new Set(shuffled.slice(0, issueCount))
+
+  const documents: DocEntry[] = DOC_NAMES.map((name) => {
+    if (!issueSet.has(name)) return { name, status: 'OK' as DocStatus }
+    const status = ISSUE_STATUSES[seededInt(seededFloat(key + name), ISSUE_STATUSES.length)] as DocStatus
+    const notes = ISSUE_NOTES[status]
+    const aiNote = notes.length > 0
+      ? notes[seededInt(seededFloat(key + name + '-note'), notes.length)] as string
+      : undefined
+    return { name, status, ...(aiNote ? { aiNote } : {}) }
+  })
+
+  const allOk = documents.every(d => d.status === 'OK')
+  const humanReviewStatus = allOk
+    ? (seededFloat(key + '-hr') < 0.7 ? 'APPROVED' : 'PENDING_REVIEW')
+    : 'PENDING_REVIEW'
+
+  const aiConfidence = allOk
+    ? parseFloat((0.85 + seededFloat(key + '-conf') * 0.14).toFixed(2))
+    : parseFloat((0.45 + seededFloat(key + '-conf') * 0.40).toFixed(2))
+
+  const reviewedAt = new Date()
+  reviewedAt.setDate(reviewedAt.getDate() - Math.floor(seededFloat(key + '-rat') * 30))
+
+  return {
+    documents,
+    aiReviewedAt: reviewedAt.toISOString(),
+    humanReviewStatus,
+    aiConfidence,
+  }
+}
+
 // ── Validity window calculation ───────────────────────────────────────────
 
 type ConsentTypeStr = 'CTE' | 'CTO' | 'HW_AUTH'
@@ -300,6 +387,7 @@ export async function seedConsents(prisma: PrismaClient): Promise<void> {
           validityTo:   validityTo   ?? null,
           state:        state as never,
           parameters: parameters as Prisma.InputJsonValue,
+          docVerification: buildDocVerification(key) as Prisma.InputJsonValue,
           feeStatus,
           makerId,
           checkerId:    needsChecker ? checkerId : null,

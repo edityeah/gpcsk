@@ -110,6 +110,14 @@ enum InspectionState {
   CANCELLED
 }
 
+enum InspectionType {
+  ROUTINE
+  RISK_BASED
+  COMPLAINT_DRIVEN
+  AUTO_SENSOR_DROPOUT
+  FOLLOWUP
+}
+
 enum ComplaintChannel {
   WEB
   PHONE
@@ -189,6 +197,7 @@ model User {
   chatThreads              ChatThread[]
   notifications            Notification[]
   broadcastsSent           Broadcast[]
+  riskBasedDecisions       RiskBasedSuggestion[]
 
   @@index([role])
 }
@@ -301,7 +310,8 @@ model Industry {
   enforcement  EnforcementAction[]
   complaints   Complaint[]
   stations     MonitoringStation[]
-  labSamples   LabSample[]
+  labSamples            LabSample[]
+  riskBasedSuggestions  RiskBasedSuggestion[]
 
   @@index([category])
   @@index([districtId, talukaId])
@@ -316,8 +326,9 @@ model ConsentApplication {
   validityFrom  DateTime?
   validityTo    DateTime?
   state         ConsentState @default(DRAFT)
-  parameters    Json         @default("{}")
-  feeStatus     String?
+  parameters      Json         @default("{}")
+  docVerification Json         @default("{}")
+  feeStatus       String?
   makerId       String?
   checkerId     String?
   reviewerNotes String?
@@ -340,8 +351,9 @@ model Inspection {
   scheduledAt   DateTime
   inspectorId   String?
   completedAt   DateTime?
-  state         InspectionState @default(SCHEDULED)
-  observations  Json            @default("{}")
+  state          InspectionState @default(SCHEDULED)
+  inspectionType InspectionType  @default(ROUTINE)
+  observations   Json            @default("{}")
   photos        Json            @default("[]")
   nextDueAt     DateTime?
   createdAt     DateTime        @default(now())
@@ -395,6 +407,7 @@ model MonitoringStation {
   readings    SensorReading[]
   exceedances Exceedance[]
   labSamples  LabSample[]
+  uptimeStats StationUptimeStat[]
 
   @@index([type])
   @@index([industryId])
@@ -633,4 +646,38 @@ model Broadcast {
   sentBy User @relation(fields: [sentById], references: [id], onDelete: Restrict)
 
   @@index([sentAt])
+}
+
+// ── Station uptime longitudinal cache ──────────────────────────────────────
+
+model StationUptimeStat {
+  id              String   @id @default(cuid())
+  stationId       String
+  date            DateTime @db.Date
+  onlineMinutes   Int
+  offlineMinutes  Int
+  outageCount     Int
+
+  station MonitoringStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  @@unique([stationId, date])
+  @@index([stationId, date])
+}
+
+// ── Risk-based inspection suggestion queue ─────────────────────────────────
+
+model RiskBasedSuggestion {
+  id                    String    @id @default(cuid())
+  industryId            String
+  suggestedAt           DateTime  @default(now())
+  riskScore             Float
+  breakdown             Json
+  state                 String    @default("SUGGESTED")
+  decidedById           String?
+  decidedAt             DateTime?
+  scheduledInspectionId String?
+
+  industry  Industry @relation(fields: [industryId], references: [id], onDelete: Cascade)
+  decidedBy User?    @relation(fields: [decidedById], references: [id], onDelete: SetNull)
+  @@unique([industryId, state])
+  @@index([state, suggestedAt])
 }
