@@ -1,49 +1,158 @@
 # Gujarat Pollution Control Samiksha Kendra (GPCSK)
 
-> AI intelligence layer for the Gujarat Pollution Control Board's review tier — a *Samiksha Kendra* that turns scattered XGN / OCEMS / CETP / complaint data into proactive, officer-actionable insight.
+> AI-driven *Samiksha Kendra* (review centre) for the Gujarat Pollution Control Board — turns scattered XGN / OCEMS / CETP / complaint data into proactive officer-actionable insight.
 
-Forked design from [KSK (Kaushal Samiksha Kendra)](https://github.com/edityeah/ksk).
+**Live demo:** [https://gpcsk.adityeah.ai](https://gpcsk.adityeah.ai)
 
-## Quickstart
+Forked design system from [KSK (Kaushal Samiksha Kendra)](https://github.com/edityeah/ksk) · powered by [SwiftChat by ConveGenius](https://swiftchat.in).
+
+---
+
+## Demo accounts
+
+Sign in at the live URL with any of these — phone OTP `1234`, XGN SSO, or one-click "Demo role picker":
+
+| Role | Phone | XGN ID | Officer |
+|---|---|---|---|
+| Senior Reviewer / Member Secretary | 9000000005 | XGN-SR-001 | Dr. K. Trivedi |
+| Consent Officer | 9000000001 | XGN-CO-001 | Anjali Patel |
+| Monitoring Officer | 9000000002 | XGN-MO-001 | Rohit Solanki |
+| Inspection & Enforcement Officer | 9000000003 | XGN-IEO-001 | Mehul Joshi |
+| Complaints Officer | 9000000004 | XGN-CMP-001 | Priya Shah |
+
+---
+
+## What's inside
+
+### Home shell (KSK-cloned, retargeted to GPCSK)
+
+- Two-column layout — sidebar (chat history + module tiles grouped by category) + main pane (greeting / chat / canvas overlay)
+- "Open an App" card grid with War Room pinned at top, then Programs / Consent Management / Risk-Based Inspections / Complaints / Dashboards
+- Half-width canvas overlay with Maximize ↔ Restore toggle and a back-stack breadcrumb (`Programs ▸ OCEMS Live Grid`)
+- Embedded **Saathi chat panel** inside every canvas with role + canvas-specific "TRY ASKING" suggestion chips
+- Sidebar profile pill at the bottom with sign-out
+
+### Canvases (25+)
+
+- **⭐ War Room** — live anomaly investigation board with a real Gujarat district heatmap (Leaflet + OSM tiles), 8 typed anomaly cards (confirmed exceedance clusters, CETP bypass, unconsented operation, complaint hotspots, SLA breaches, frequent sensor dropouts, norm-trend drift), and inline Escalate / Snooze / Resolve / "Investigate with Saathi" actions
+- **🔬 Programs** — OCEMS / AAQM / Water Quality / VOC / CETP / Festival Monitoring + Noise & Hazardous Waste (v2 placeholders), each card opens its program's live grid
+- **📝 Consent Management** — orchestrator with KPI strip, 5 tabs (Inbox / **AI Verification** / Pipeline / Renewals / Capacity-vs-Consent). AI Verification scans each consent application's uploaded documents and flags them BLANK / MISSING / BLURRED / UNCLEAR / UNSCANNED / OK before a human reviewer signs off
+- **🔍 Risk-Based Inspections** — AI surfaces top-risk industries (composite score from exceedances + complaints + open inspections + consent gaps); IEO confirms / dismisses / schedules; confirmed ones land in the Inspection Scheduler with `inspectionType=RISK_BASED`
+- **📞 Complaints** — inbox + auto-triage donut + hotspot map + industry correlation + citizen response tracker
+- **📊 Senior Reviewer mega-dashboards** — Gujarat Pulse · Industry Risk Index · Enforcement Pipeline · Trend Lab · Maker-Checker Queue · Broadcast
+- **🤖 AI Chat** — gpt-4o intent routing + RAG over Acts, CPCB norms, GPCB Annual Reports (incl. 80 OCR-extracted chunks from AR 2024-25), CETP Feb-2026 report, and Ganesh Utsav festival data. Renders **inline charts** (BAR / LINE / PIE / AREA) when asked for trends or top-N rankings. Cites sources back to the source document.
+- **🎤 Voice calling** — OpenAI Realtime (gpt-realtime) over WebRTC with screen-share. Click the phone icon, ask "what am I looking at?", model sees the screen + answers grounded in the same RAG corpus. Pill sits in the top-right of the app shell during a call.
+
+### Live data sources
+
+| Stream | Source | Provenance badge |
+|---|---|---|
+| Air quality (AAQM) | **WAQI** (republishes CPCB CAAQMS hourly) — 12 live Gujarat stations including GIDC Ankleshwar, Chandkheda Ahmedabad, GIDC Nandesari, GIFT City, Vatva, Vapi, Bopal, Hansol, Sector-10 Gandhinagar, SAC ISRO, IIPHG Lekawada, Gyaspur | 🟢 **CPCB Live** |
+| OCEMS / CEMS (effluent) | 50 real Gujarat industries — Adani Power Mundra, Reliance Jamnagar, Torrent Power, Deepak Nitrite Nandesari, etc. Names from GPCB AR; readings synthesised (no public CEMS API) | 🟡 **Real name · Synthetic readings** |
+| Everything else (VOC / Hazardous Waste / Noise / MINARS-GEMS / synthetic OCEMS / synthetic AAQM fallback) | Deterministic seed with per-station compliance bands modelled against CPCB norms | ⚪ **Synthetic** |
+| Knowledge base (RAG) | Water Act 1974 · Air Act 1981 · EPA 1986 + Rules · HW Rules 2016 · Noise Rules 2000 · CPCB NAAQS · CETP Effluent Standards · **GPCB AR 2022-23 + 2024-25** (full OCR ingest) · CETP Feb-2026 report · Festival Monitoring SOP | All real |
+
+Live ingest runs hourly inside the API container; data lands in `MonitoringStation` + `SensorReading` with a `dataSource` and `lastIngestedAt` stamped on every row.
+
+### Roles & maker-checker
+
+5 functional officer archetypes with row-level RBAC. Enforcement actions and consent decisions flow through a **maker-checker state machine** (`DRAFT → PENDING_REVIEW → COMMITTED / RETURNED_FOR_REVISION / WITHDRAWN`) with every transition stamped to `AuditLog`.
+
+---
+
+## Stack
+
+| Layer | Choice |
+|---|---|
+| Frontend | Vite + React 18 + TS + Tailwind 3 + lucide-react + recharts + Leaflet + react-i18next (en + gu) |
+| Backend | Node 20 + Express + Prisma + Zod + vitest |
+| Database | Postgres 16 + pgvector (1536-dim embeddings via text-embedding-3-small) |
+| LLM | OpenAI gpt-4o (chat + intent routing + chart spec generation) + gpt-realtime (voice + vision) |
+| Live data | WAQI public API (Gujarat AAQM) · `node-cron` for hourly refresh |
+| Auth | JWT — phone OTP / mock XGN SSO / demo role picker |
+| Tooling | pnpm workspaces — `apps/web`, `apps/api`, `packages/shared` |
+| Hosting | Docker Compose on a Mac → Cloudflare Tunnel (zero recurring cost) |
+
+```
+Internet ──HTTPS──► Cloudflare edge ──tunnel──► cloudflared on Mac
+                                                      │
+                          ┌───────────────────────────┴─────────────────────────┐
+                          │                  Docker Compose                      │
+                          │  web   — Vite build served by nginx, 127.0.0.1:3002 │
+                          │  api   — Node/Express, 127.0.0.1:8002               │
+                          │  db    — postgres:16 + pgvector, 127.0.0.1:5435     │
+                          └──────────────────────────────────────────────────────┘
+```
+
+All containers bind to `127.0.0.1` — only Cloudflare's tunnel daemon reaches the services. Dev stack runs on its own ports (`:5434 / :8001 / :3001`) and coexists with prod.
+
+---
+
+## Local development
 
 ```bash
-# 1. Prerequisites: Node 20, pnpm 9, Docker Desktop.
-nvm use   # honours .nvmrc
+# 1. Prerequisites
+nvm use                                   # honours .nvmrc (Node 20)
+# pnpm 9.12.3 is bundled via corepack — no global install needed
 
-# 2. Install workspace dependencies.
-pnpm install
-
-# 3. Start Postgres + pgvector.
+# 2. Boot Postgres + pgvector
 pnpm db:up
 
-# 4. Configure environment.
-cp .env.example .env   # then edit OPENAI_API_KEY if needed for slice 7
+# 3. Install + configure
+pnpm install
+cp .env.example .env                      # paste your OPENAI_API_KEY + WAQI_TOKEN
 
-# 5. Run database migrations.
+# 4. Schema + seed
 pnpm --filter @gpcsk/api exec prisma migrate dev
-
-# 6. Seed full demo dataset (industries, consents, sensors, CETPs, inspections,
-#    violations, enforcement actions, complaints, knowledge docs).
 pnpm --filter @gpcsk/api run db:seed
 
-# 7. Build the RAG index (skips chunks when OPENAI_API_KEY is a placeholder).
+# 5. Ingest the GPCB AR + CETP + festival PDFs into the RAG corpus
+pnpm --filter @gpcsk/api run rag:ingest-pdfs
 pnpm --filter @gpcsk/api run rag:ingest
 
-# 8. Launch both apps in parallel.
+# 6. Pull live AAQM data once
+pnpm --filter @gpcsk/api run ingest:aaqm
+
+# 7. Run web + api in parallel
 pnpm dev
 ```
 
-Then open `http://127.0.0.1:3001`. Sign in with phone `9000000005` + OTP `1234` (Senior Reviewer), or use the demo role picker.
+Open `http://127.0.0.1:3001` and sign in as Senior Reviewer (phone `9000000005` + OTP `1234`).
 
-**Full demo walkthrough →** [docs/DEMO.md](docs/DEMO.md).
+### Useful commands
+
+```bash
+pnpm test                                 # run all api + web vitest suites
+pnpm typecheck                            # workspace-wide tsc --noEmit
+pnpm db:reset                             # wipe + reseed dev DB
+pnpm --filter @gpcsk/api run ingest:aaqm  # manual WAQI refresh
+pnpm --filter @gpcsk/api run ingest:cems  # manual CEMS refresh (currently fallback)
+```
+
+---
+
+## Production deployment
+
+`docker-compose.tunnel.yml` + `.env.production` + Cloudflare Tunnel. See [docs/DEMO.md](docs/DEMO.md) for the demo flow and [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the deploy runbook.
+
+```bash
+docker compose --project-name gpcsk-prod --env-file .env.production -f docker-compose.tunnel.yml up -d --build
+```
+
+A launchd agent (`ai.adityeah.gpcsk-tunnel`) keeps the Cloudflare Tunnel alive across reboots.
+
+---
 
 ## Documentation
 
-- Design spec: [docs/superpowers/specs/2026-06-04-gpcsk-design.md](docs/superpowers/specs/2026-06-04-gpcsk-design.md)
-- Implementation plans: [docs/superpowers/plans/](docs/superpowers/plans/)
-- Development guide: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
-- GPCB source materials: [docs/references/gpcb-sources/](docs/references/gpcb-sources/)
+- [Design spec](docs/superpowers/specs/2026-06-04-gpcsk-design.md) — vision, scope, data model, screens, AI orchestrator
+- [Implementation plans](docs/superpowers/plans/) — slice-by-slice execution plans
+- [Demo walkthrough](docs/DEMO.md) — 6-step Senior-Reviewer → Inspection-Officer maker-checker round-trip
+- [Development runbook](docs/DEVELOPMENT.md) — local dev + ops commands
+- [GPCB source materials](docs/references/gpcb-sources/) — committed PDFs and OCR text
+
+---
 
 ## License
 
-Personal project. No license granted for commercial use, redistribution, or model training.
+Personal project. No license granted for commercial use, redistribution, or model training. Contact the maintainer for collaboration.
