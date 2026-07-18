@@ -141,6 +141,18 @@ docker compose --project-name gpcsk-prod --env-file .env.production -f docker-co
 
 A launchd agent (`ai.adityeah.gpcsk-tunnel`) keeps the Cloudflare Tunnel alive across reboots.
 
+### Offline fallback
+
+Because the demo runs on a personal laptop, there will be windows where the Mac is asleep and Cloudflare can't reach the tunnel. A small **Cloudflare Worker** (`infra/cloudflare-worker/`) sits on `gpcsk.adityeah.ai/*`, proxies healthy traffic straight through to the tunnel, and — if the origin errors or times out — serves a branded "owner's laptop is asleep" page with a mailto link and 60-second auto-retry, instead of Cloudflare's default 502/1033 error. Deploy with:
+
+```bash
+cd infra/cloudflare-worker
+npx wrangler login          # one-time browser OAuth
+npx wrangler deploy
+```
+
+Free Workers plan — stays inside the zero-recurring-cost budget.
+
 ---
 
 ## Documentation

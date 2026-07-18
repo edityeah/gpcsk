@@ -1,0 +1,15 @@
+name = "gpcsk-offline-guard"
+main = "src/worker.js"
+compatibility_date = "2026-06-01"
+
+# Attach this Worker to gpcsk.adityeah.ai so it runs BEFORE the tunnel
+# is dialled. Free-plan Workers can bind to a route on a zone Cloudflare
+# already manages, and adityeah.ai is already on Cloudflare because the
+# tunnel is provisioned there.
+routes = [
+  { pattern = "gpcsk.adityeah.ai/*", zone_name = "adityeah.ai" }
+]
+
+# Keep observability off — nothing here should leak logs.
+[observability]
+enabled = false

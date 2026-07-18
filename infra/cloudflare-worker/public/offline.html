@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#386AF6" />
+  <meta name="robots" content="noindex" />
+  <title>GPCSK — demo temporarily offline</title>
+  <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23386AF6'/><text x='16' y='22' font-family='Inter,sans-serif' font-size='16' font-weight='700' text-anchor='middle' fill='white'>G</text></svg>" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --primary: #386AF6;
+      --primary-dark: #2755E3;
+      --primary-light: #EEF2FF;
+      --txt-primary: #1A1F36;
+      --txt-secondary: #7383A5;
+      --txt-tertiary: #B8C0CC;
+      --surface: #FFFFFF;
+      --surface-secondary: #F5F7FA;
+      --bg: #F4F6FA;
+      --bdr: #E2E8F0;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --primary: #6685FF;
+        --primary-dark: #A8BAFF;
+        --primary-light: rgba(102, 133, 255, 0.14);
+        --txt-primary: #F1F5F9;
+        --txt-secondary: #94A3B8;
+        --txt-tertiary: #64748B;
+        --surface: #1E293B;
+        --surface-secondary: #0F172A;
+        --bg: #0B1120;
+        --bdr: #334155;
+      }
+    }
+    html, body { min-height: 100vh; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--txt-primary);
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 16px;
+      position: relative;
+    }
+    .tricolor {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 4px;
+      background: linear-gradient(to right, #FF9933 33%, #FFFFFF 33% 66%, #138808 66%);
+      z-index: 10;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--bdr);
+      border-radius: 16px;
+      padding: 40px 32px;
+      max-width: 560px;
+      width: 100%;
+      box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 24px;
+      color: var(--txt-secondary);
+      font-size: 11px;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .brand-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--primary);
+      box-shadow: 0 0 0 4px var(--primary-light);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--txt-primary);
+      margin-bottom: 10px;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+    .sub {
+      color: var(--txt-secondary);
+      font-size: 15px;
+      margin-bottom: 24px;
+    }
+    .note {
+      background: var(--surface-secondary);
+      border: 1px solid var(--bdr);
+      border-radius: 12px;
+      padding: 16px 18px;
+      font-size: 14px;
+      color: var(--txt-secondary);
+      margin-bottom: 24px;
+      line-height: 1.65;
+    }
+    .note strong { color: var(--txt-primary); font-weight: 600; }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 11px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: transform 120ms ease, background 120ms ease;
+      font-family: inherit;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-secondary {
+      background: transparent;
+      color: var(--txt-primary);
+      border-color: var(--bdr);
+    }
+    .btn-secondary:hover { background: var(--surface-secondary); }
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 12px;
+      color: var(--txt-tertiary);
+      padding-top: 18px;
+      border-top: 1px solid var(--bdr);
+    }
+    .retry { display: inline-flex; align-items: center; gap: 6px; }
+    .spin {
+      width: 12px; height: 12px;
+      border: 2px solid var(--txt-tertiary);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .footer {
+      margin-top: 22px;
+      font-size: 12px;
+      color: var(--txt-tertiary);
+      text-align: center;
+    }
+    .footer a {
+      color: var(--txt-secondary);
+      text-decoration: none;
+      border-bottom: 1px dotted currentColor;
+    }
+    @media (max-width: 480px) {
+      .card { padding: 30px 22px; }
+      h1 { font-size: 23px; }
+      .actions .btn { flex: 1 1 auto; justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+  <div class="tricolor"></div>
+
+  <main class="card" role="main">
+    <div class="brand">
+      <span class="brand-dot" aria-hidden="true"></span>
+      <span>GPCSK · Gujarat Pollution Control Samiksha Kendra</span>
+    </div>
+
+    <h1>The demo is temporarily offline</h1>
+    <p class="sub">GPCSK will be back the moment the owner's laptop wakes up.</p>
+
+    <div class="note">
+      Being fully honest: <strong>this app runs on the owner's personal Mac</strong>, streamed to the internet via a Cloudflare Tunnel. It's a pitch prototype with no hosted server behind it — so whenever the laptop is closed or asleep, the demo goes dark.
+      <br /><br />
+      This page auto-refreshes every minute. If the site doesn't come back within an hour or two, the laptop is probably off for the day — drop the owner an email and he'll bring it up for you.
+    </div>
+
+    <div class="actions">
+      <a
+        class="btn btn-primary"
+        href="mailto:aditya.c@convegenius.ai?subject=GPCSK%20demo%20%E2%80%94%20can%20you%20wake%20the%20server%3F&body=Hi%20Aditya%2C%0A%0AI%20tried%20to%20open%20the%20GPCSK%20demo%20but%20it%20looks%20like%20the%20server%20is%20offline.%20Could%20you%20bring%20it%20up%20when%20you%20get%20a%20chance%3F%0A%0AThanks%21"
+      >
+        Email Aditya
+      </a>
+      <button class="btn btn-secondary" onclick="location.reload()" type="button">
+        Try again now
+      </button>
+    </div>
+
+    <div class="status-row">
+      <span class="retry"><span class="spin" aria-hidden="true"></span> Auto-retrying every 60s</span>
+      <span id="last-checked">Last check: —</span>
+    </div>
+  </main>
+
+  <p class="footer">
+    Built by <a href="mailto:aditya.c@convegenius.ai">Aditya</a> · powered by SwiftChat by ConveGenius
+  </p>
+
+  <script>
+    (function () {
+      var el = document.getElementById('last-checked');
+      if (el) {
+        var now = new Date();
+        var time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        el.textContent = 'Last check: ' + time;
+      }
+      setTimeout(function () { location.reload(); }, 60000);
+    })();
+  </script>
+</body>
+</html>

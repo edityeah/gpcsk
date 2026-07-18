@@ -48,3 +48,8 @@ docs/references/gpcb-sources/gpcb-annual-report-2024-25.pdf
 apps/web/vite.config.d.ts
 apps/web/vite.config.js
 .env.production
+
+# Cloudflare Workers (wrangler local state)
+.wrangler/
+infra/cloudflare-worker/.wrangler/
+infra/cloudflare-worker/node_modules/
