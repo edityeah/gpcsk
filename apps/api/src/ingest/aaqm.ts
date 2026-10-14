@@ -89,6 +89,51 @@ interface WaqiFeed {
  *   1. bbox → list of station uids
  *   2. per-uid /feed/@<uid> → full parameter array
  */
+/**
+ * Gujarat cities/industrial estates with CPCB CAAQMS stations, used as WAQI
+ * /search keywords when /map/bounds returns nothing (observed for fresh
+ * tokens: the bounds endpoint answers `ok` with an empty list while /search
+ * and /feed work normally).
+ */
+const WAQI_GUJARAT_KEYWORDS = [
+  'Ahmedabad', 'Gandhinagar', 'Vadodara', 'Surat', 'Rajkot', 'Bhavnagar', 'Jamnagar',
+  'Junagadh', 'Anand', 'Mehsana', 'Navsari', 'Bharuch', 'Ankleshwar', 'Vapi', 'Nandesari',
+  'Dahej', 'Morbi', 'Kutch', 'Gandhidham', 'Vatva', 'GIFT City', 'Gujarat',
+]
+
+interface WaqiSearchHit {
+  uid: number
+  aqi: string | number
+  station: { name: string; geo?: [number, number]; time?: string }
+}
+
+/** WAQI /search fallback: union of keyword hits, deduped by uid, shaped like bbox rows. */
+async function searchWaqiGujaratStations(token: string): Promise<WaqiBboxStation[]> {
+  const byUid = new Map<number, WaqiBboxStation>()
+  for (const keyword of WAQI_GUJARAT_KEYWORDS) {
+    try {
+      const res = await fetch(`${WAQI_BASE}/search/?keyword=${encodeURIComponent(keyword)}&token=${token}`)
+      if (!res.ok) continue
+      const json = await res.json() as { status: string; data: WaqiSearchHit[] }
+      if (json.status !== 'ok' || !Array.isArray(json.data)) continue
+      for (const hit of json.data) {
+        const geo = hit.station?.geo
+        if (!geo || byUid.has(hit.uid)) continue
+        byUid.set(hit.uid, {
+          uid: hit.uid,
+          lat: geo[0],
+          lon: geo[1],
+          aqi: hit.aqi,
+          station: { name: hit.station.name, time: hit.station.time ?? '' , geo },
+        })
+      }
+    } catch {
+      // keyword-level failure — keep going with the others
+    }
+  }
+  return [...byUid.values()]
+}
+
 async function fetchWaqiGujaratStations(token: string): Promise<ParsedLocation[]> {
   // bbox: latlng=south,west,north,east (Gujarat 20-25 lat, 68-75 lng)
   const bboxUrl = `${WAQI_BASE}/map/bounds/?latlng=20.1,68.0,24.8,74.5&token=${token}`
@@ -97,7 +142,12 @@ async function fetchWaqiGujaratStations(token: string): Promise<ParsedLocation[]
   const bboxJson = await bboxRes.json() as { status: string; data: WaqiBboxStation[] }
   if (bboxJson.status !== 'ok') throw new Error(`WAQI status ${bboxJson.status}`)
 
-  const stations = bboxJson.data
+  let stations = Array.isArray(bboxJson.data) ? bboxJson.data : []
+  if (stations.length === 0) {
+    logger.info('AAQM ingest: WAQI bbox returned 0 stations — falling back to keyword search')
+    stations = await searchWaqiGujaratStations(token)
+    logger.info(`AAQM ingest: WAQI keyword search found ${stations.length} candidate stations`)
+  }
   // Filter to Gujarat lat/lng (bbox can leak into Maharashtra/Rajasthan border towns).
   // Also exclude known non-Gujarat city names that fall inside the bbox.
   const NON_GUJARAT_KEYWORDS = ['Udaipur', 'Nashik', 'Mumbai', 'Pune', 'Indore', 'Ujjain', 'Jodhpur', 'Sirohi', 'Banswara', 'Dungarpur']
