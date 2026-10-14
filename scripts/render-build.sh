@@ -11,9 +11,14 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "── node $(node -v)"
-corepack enable 2>/dev/null || true
-PNPM="corepack pnpm"
-$PNPM -v
+# pnpm via npm, not corepack: the corepack bundled with Node 20.x ships stale
+# npm registry signing keys and aborts with "Cannot find matching keyid".
+PNPM_VERSION="$(node -p "require('./package.json').packageManager.split('@')[1]")"
+if ! command -v pnpm >/dev/null 2>&1 || [ "$(pnpm -v 2>/dev/null)" != "$PNPM_VERSION" ]; then
+  npm install -g "pnpm@${PNPM_VERSION}" --no-audit --no-fund
+fi
+PNPM="pnpm"
+echo "── pnpm $($PNPM -v)"
 
 $PNPM install --frozen-lockfile --prod=false
 
