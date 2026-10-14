@@ -73,6 +73,12 @@ const MessageBodySchema = z.object({
   lang: z.enum(['en', 'gu', 'hi']).optional().default('en'),
   /** Canvas module id that originated this message — stored in toolCalls for client-side filtering */
   canvasContext: z.string().optional(),
+  /**
+   * What was on the officer's screen when this thread was started (title,
+   * subtitle and a compact data brief published by the canvas). Appended to
+   * the system prompt so Saathi answers about the live screen first.
+   */
+  screenContext: z.string().max(8000).optional(),
 })
 
 // ── Data query handlers ────────────────────────────────────────────────────
@@ -355,7 +361,7 @@ aiRouter.post('/message', requireAuth, async (req, res) => {
     return
   }
 
-  const { threadId: existingThreadId, content, lang, canvasContext } = parsed.data
+  const { threadId: existingThreadId, content, lang, canvasContext, screenContext } = parsed.data
   const userId = req.auth!.sub
   const userRole = req.auth!.role as Role
 
@@ -432,6 +438,13 @@ aiRouter.post('/message', requireAuth, async (req, res) => {
         `Prefer calling data tools (queryTopPollutingIndustries, queryExceedanceTrend, etc.) ` +
         `or answering directly with RAG. ` +
         `Only open a DIFFERENT canvas if the question is clearly about something the current canvas does not show.`
+    }
+    if (screenContext) {
+      basePrompt +=
+        `\n\nThis conversation was started from a screen the officer is looking at. ` +
+        `Answer about what is on that screen first, using the data below; be concrete and short. ` +
+        `Never invent numbers that are not in the data — if something is missing, say it is not reported.\n\n` +
+        `WHAT WAS ON THE SCREEN WHEN THIS THREAD STARTED:\n${screenContext}`
     }
     const systemContent =
       lang === 'gu'

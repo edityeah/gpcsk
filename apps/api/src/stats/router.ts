@@ -9,6 +9,8 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { prisma } from '../db.js'
 import { requireAuth } from '../auth/middleware.js'
+import { buildHeadline } from './headline.js'
+import type { Role } from '@gpcsk/shared'
 
 export const statsRouter = Router()
 
@@ -21,6 +23,19 @@ function daysAgo(n: number): Date {
 function clamp(min: number, max: number, v: number): number {
   return Math.min(max, Math.max(min, v))
 }
+
+// ── GET /api/stats/headline ──────────────────────────────────────────────────
+//
+// Role-specific "five numbers" strip for the home page. See ./headline.ts.
+
+statsRouter.get('/headline', requireAuth, async (req, res) => {
+  try {
+    const headline = await buildHeadline(req.auth!.role as Role)
+    res.json(headline)
+  } catch (err: unknown) {
+    res.status(500).json({ error: 'headline_failed', message: String((err as Error)?.message ?? err) })
+  }
+})
 
 // ── GET /api/stats/pulse ─────────────────────────────────────────────────────
 //

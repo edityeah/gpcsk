@@ -880,6 +880,28 @@ const OPEN_REPORT_EXPORT: ModuleEntry = {
 // Registry
 // ────────────────────────────────────────────────────────────────────────────
 
+
+// ────────────────────────────────────────────────────────────────────────────
+// Saathi — the orchestrator conversation (web-only canvas; not an AI tool)
+// ────────────────────────────────────────────────────────────────────────────
+
+const OPEN_SAATHI: ModuleEntry = {
+  id: 'OPEN_SAATHI',
+  component: lazy(() =>
+    import('../canvas/modules/shared/SaathiAssistantCanvas.js').then((m) => ({
+      default: m.SaathiAssistantCanvas,
+    })),
+  ),
+  allowedRoles: ['SENIOR_REVIEWER', 'CONSENT_OFFICER', 'MONITORING_OFFICER', 'INSPECTION_ENFORCEMENT_OFFICER', 'COMPLAINTS_OFFICER'],
+  label: { en: 'Saathi', gu: 'સાથી', hi: 'साथी' },
+  icon: 'Sparkles',
+  tone: 'indigo',
+  description: 'Your GPCSK companion · opens any screen, answers anything',
+  sidebarGroup: 'Tools',
+  category: 'SETTINGS',
+  suggestedPrompts: [],
+}
+
 export const moduleRegistry: ModuleEntry[] = [
   // Programs — top-level overview
   OPEN_PROGRAMS,
@@ -925,6 +947,7 @@ export const moduleRegistry: ModuleEntry[] = [
   OPEN_INDUSTRY_DEEP_DIVE,
   OPEN_NOTIFICATIONS,
   OPEN_REPORT_EXPORT,
+  OPEN_SAATHI,
 ]
 
 /** Look up a module entry by its action ID */

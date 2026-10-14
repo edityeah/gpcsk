@@ -1,14 +1,15 @@
 /**
- * ChatContext — owns the chat ↔ canvas demo flow.
+ * ChatContext — owns the chat ↔ canvas flow.
  *
- * Responsibilities:
- *  - In-memory thread list (lazily backed by GET /api/ai/threads later).
- *  - The active thread's messages.
+ *  - Server-backed thread list (GET /api/ai/threads) for the sidebar.
+ *  - The home conversation (messages kept in memory per thread id).
  *  - Sending a user message → POST /api/ai/message → dispatch the response:
  *      { kind: 'canvas', module, args } → openCanvas(module, args)
- *      { kind: 'answer', text, citations }  → append assistant message.
- *  - Active canvas state for <CanvasHost>.
- *  - Manual canvas open (sidebar tile clicks).
+ *      { kind: 'answer' | 'chart' }      → append assistant message.
+ *  - The canvas navigation stack rendered by <CanvasPanel>.
+ *  - askSaathi(): start a Saathi thread *about* the screen the officer is on
+ *    (PM-SETU behaviour) — opens the OPEN_SAATHI canvas on top of the stack
+ *    so Back returns to that screen.
  */
 
 import {
@@ -84,6 +85,7 @@ export interface ChatThread {
   id: string
   title: string
   lastMessageAt: string
+  messageCount?: number
 }
 
 export interface CanvasState {
@@ -91,7 +93,16 @@ export interface CanvasState {
   args?: Record<string, unknown> | undefined
 }
 
-interface AiMessageResponse {
+/** What a screen publishes when a Saathi thread is started from it. */
+export interface SaathiAbout {
+  canvasType: string
+  title: string
+  subtitle: string
+  context: string
+  quickAsks: string[]
+}
+
+export interface AiMessageResponse {
   kind: 'canvas' | 'answer' | 'chart'
   module?: string
   args?: Record<string, unknown>
@@ -102,7 +113,7 @@ interface AiMessageResponse {
 }
 
 export interface SendMessageOptions {
-  /** Canvas module id to tag this message with, for bottom-pane filtering. */
+  /** Canvas module id to tag this message with. */
   canvasContext?: string
 }
 
@@ -118,19 +129,29 @@ interface ChatContextValue {
 
   sendMessage: (content: string, opts?: SendMessageOptions) => Promise<void>
   newThread: () => void
+  /** Open a saved thread — shows it in the Saathi canvas (PM-SETU behaviour). */
   openThread: (threadId: string) => void
+  refreshThreads: () => Promise<void>
   openCanvas: (module: string, args?: Record<string, unknown>) => void
   /** Pop one level off the canvas stack. If stack becomes empty, canvas closes. */
   backCanvas: () => void
   closeCanvas: () => void
+  /** Start a Saathi thread about a screen; `prompt` is sent as the first message. */
+  askSaathi: (opts?: { about?: SaathiAbout | null; prompt?: string }) => void
 }
 
 const Ctx = createContext<ChatContextValue | null>(null)
+
+export const SAATHI_MODULE = 'OPEN_SAATHI'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function makeLocalId(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`
+}
+
+interface ThreadsResponse {
+  threads: Array<{ id: string; title: string | null; lastMessageAt: string; _count?: { messages: number } }>
 }
 
 // ── Provider ────────────────────────────────────────────────────────────────
@@ -144,24 +165,41 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // messages keyed by thread id (kept in-memory only for the demo)
   const [messagesByThread, setMessagesByThread] = useState<Record<string, ChatMessage[]>>({})
   const [canvasStack, setCanvasStack] = useState<Array<{ module: string; args: Record<string, unknown> }>>([])
+  const [busy, setBusy] = useState(false)
 
   // Derived view — keeps all existing consumers working unchanged
   const canvasTop = canvasStack[canvasStack.length - 1]
   const canvasState: CanvasState = canvasTop
     ? { module: canvasTop.module, args: canvasTop.args }
     : { module: null }
-  const [busy, setBusy] = useState(false)
 
-  // Reset chat state when the user signs out
-  useEffect(() => {
-    if (!user) {
-      setThreads([])
-      setCurrentThreadId(null)
-      setMessagesByThread({})
-      setCanvasStack([])
-      setBusy(false)
+  const refreshThreads = useCallback(async () => {
+    if (!token) { setThreads([]); return }
+    try {
+      const r = await api<ThreadsResponse>('/api/ai/threads', { token })
+      setThreads(
+        (r.threads ?? []).map((t) => ({
+          id: t.id,
+          title: t.title ?? 'Conversation',
+          lastMessageAt: t.lastMessageAt,
+          messageCount: t._count?.messages,
+        })),
+      )
+    } catch {
+      /* sidebar stays as-is */
     }
-  }, [user])
+  }, [token])
+
+  // Reset chat state whenever the signed-in user changes (sign-out or role switch)
+  const userId = user?.id ?? null
+  useEffect(() => {
+    setCurrentThreadId(null)
+    setMessagesByThread({})
+    setCanvasStack([])
+    setBusy(false)
+    if (!userId) setThreads([])
+    else void refreshThreads()
+  }, [userId, refreshThreads])
 
   const messages = currentThreadId ? (messagesByThread[currentThreadId] ?? []) : []
   const currentThread = threads.find((t) => t.id === currentThreadId) ?? null
@@ -182,10 +220,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const newThread = useCallback(() => {
     setCurrentThreadId(null)
+    setCanvasStack([])
   }, [])
 
   const openThread = useCallback((threadId: string) => {
-    setCurrentThreadId(threadId)
+    setCanvasStack([{ module: SAATHI_MODULE, args: { threadId } }])
+  }, [])
+
+  const askSaathi = useCallback((opts?: { about?: SaathiAbout | null; prompt?: string }) => {
+    const args: Record<string, unknown> = { about: opts?.about ?? null }
+    if (opts?.prompt) args['pendingPrompt'] = { text: opts.prompt, nonce: Date.now() }
+    setCanvasStack((prev) => {
+      // Re-use the Saathi canvas if it is already on top (new question, same thread)
+      const top = prev[prev.length - 1]
+      if (top && top.module === SAATHI_MODULE) {
+        return [...prev.slice(0, -1), { module: SAATHI_MODULE, args: { ...top.args, ...args } }]
+      }
+      return [...prev, { module: SAATHI_MODULE, args }]
+    })
   }, [])
 
   const sendMessage = useCallback(
@@ -195,7 +247,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       const canvasContext = opts?.canvasContext
 
-      // Optimistic user message + ensure we have a thread bucket
       const userMsg: ChatMessage = {
         id: makeLocalId('m'),
         role: 'user',
@@ -205,31 +256,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }
 
       // If there's no current thread, mint a placeholder client-side
-      // (the API will return the real threadId in the response).
-      // Canvas-scoped messages must NOT create a new sidebar thread — they
-      // append to the current thread (or a silent scratch thread that never
-      // appears as a sidebar entry if there is truly no active thread).
+      // (the API returns the real threadId in the response).
       let threadId = currentThreadId
-      const isNewThread = !threadId && !canvasContext
-      if (!threadId && !canvasContext) {
-        threadId = makeLocalId('t')
-        setCurrentThreadId(threadId)
-        setThreads((prev) => [
-          {
-            id: threadId!,
-            title: trimmed.slice(0, 60),
-            lastMessageAt: new Date().toISOString(),
-          },
-          ...prev,
-        ])
-      } else if (!threadId && canvasContext) {
-        // Canvas message with no active thread — use a transient bucket that
-        // is NOT added to the sidebar threads list.
+      const isNewThread = !threadId
+      if (!threadId) {
         threadId = makeLocalId('t')
         setCurrentThreadId(threadId)
       }
-      // At this point threadId is always a non-null string (assigned in all branches above).
-      const tid = threadId as string
+      const tid = threadId
 
       setMessagesByThread((prev) => ({
         ...prev,
@@ -244,9 +278,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           body: {
             content: trimmed,
             lang,
-            // Only forward to the API once we have a server-issued thread id
             threadId: isNewThread ? undefined : tid,
-            // Canvas context for metadata storage (backend stores, ignores for AI prompt)
             ...(canvasContext ? { canvasContext } : {}),
           },
         })
@@ -254,9 +286,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         // If the server minted a different (real) thread id, swap it in
         const serverId = res.threadId
         if (serverId && serverId !== tid) {
-          setThreads((prev) =>
-            prev.map((t) => (t.id === tid ? { ...t, id: serverId } : t)),
-          )
           setMessagesByThread((prev) => {
             const list = prev[tid] ?? []
             const { [tid]: _drop, ...rest } = prev
@@ -269,8 +298,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
         if (res.kind === 'canvas' && res.module) {
           openCanvas(res.module, res.args)
-          // Do NOT append a text bubble — the canvas opening is the response.
-          // Adding "Opening war room…" text is noise; the UI already shows the panel.
+          // The canvas opening is the response — no text bubble.
         } else if (res.kind === 'chart' && res.spec) {
           const assistant: ChatMessage = {
             id: makeLocalId('m'),
@@ -280,10 +308,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             spec: res.spec,
             createdAt: new Date().toISOString(),
           }
-          setMessagesByThread((prev) => ({
-            ...prev,
-            [finalId]: [...(prev[finalId] ?? []), assistant],
-          }))
+          setMessagesByThread((prev) => ({ ...prev, [finalId]: [...(prev[finalId] ?? []), assistant] }))
         } else {
           const assistant: ChatMessage = {
             id: makeLocalId('m'),
@@ -293,20 +318,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             citations: res.citations ?? [],
             createdAt: new Date().toISOString(),
           }
-          setMessagesByThread((prev) => ({
-            ...prev,
-            [finalId]: [...(prev[finalId] ?? []), assistant],
-          }))
+          setMessagesByThread((prev) => ({ ...prev, [finalId]: [...(prev[finalId] ?? []), assistant] }))
         }
 
-        // Bump thread title + lastMessageAt
-        setThreads((prev) =>
-          prev.map((t) =>
-            t.id === finalId
-              ? { ...t, lastMessageAt: new Date().toISOString() }
-              : t,
-          ),
-        )
+        void refreshThreads()
       } catch (err: unknown) {
         const message =
           err && typeof err === 'object' && 'message' in err
@@ -321,46 +336,22 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           content: 'Sorry — I could not reach the server. Please try again.',
           createdAt: new Date().toISOString(),
         }
-        setMessagesByThread((prev) => ({
-          ...prev,
-          [tid]: [...(prev[tid] ?? []), assistant],
-        }))
+        setMessagesByThread((prev) => ({ ...prev, [tid]: [...(prev[tid] ?? []), assistant] }))
       } finally {
         setBusy(false)
       }
     },
-    [token, lang, currentThreadId, openCanvas, showToast],
+    [token, lang, currentThreadId, openCanvas, showToast, refreshThreads],
   )
 
   const value = useMemo<ChatContextValue>(
     () => ({
-      threads,
-      currentThread,
-      messages,
-      canvasState,
-      canvasStack,
-      busy,
-      sendMessage,
-      newThread,
-      openThread,
-      openCanvas,
-      backCanvas,
-      closeCanvas,
+      threads, currentThread, messages, canvasState, canvasStack, busy,
+      sendMessage, newThread, openThread, refreshThreads,
+      openCanvas, backCanvas, closeCanvas, askSaathi,
     }),
-    [
-      threads,
-      currentThread,
-      messages,
-      canvasState,
-      canvasStack,
-      busy,
-      sendMessage,
-      newThread,
-      openThread,
-      openCanvas,
-      backCanvas,
-      closeCanvas,
-    ],
+    [threads, currentThread, messages, canvasState, canvasStack, busy,
+     sendMessage, newThread, openThread, refreshThreads, openCanvas, backCanvas, closeCanvas, askSaathi],
   )
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

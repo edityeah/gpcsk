@@ -24,6 +24,7 @@ import {
 import { api } from '../../../lib/api.js'
 import { useAuth } from '../../../context/AuthContext.js'
 import { useChat } from '../../../context/ChatContext.js'
+import { useSaathiContext, brief } from '../../CanvasSaathi.js'
 import { useApp } from '../../../context/AppContext.js'
 import { AskSaathiButton } from '../../../components/AskSaathiButton.js'
 import { GujaratHeatmap } from '../../../components/GujaratHeatmap.js'
@@ -274,13 +275,14 @@ function FilterBar({ severity, onSeverity }: FiltersProps) {
 
 export function WarRoomCanvas() {
   const { token } = useAuth()
-  const { sendMessage } = useChat()
+  const { askSaathi } = useChat()
   const { showToast } = useApp()
   const [data, setData] = useState<WarRoomData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const [severity, setSeverity] = useState<Severity | 'ALL'>('ALL')
+  useSaathiContext(data ? brief(data) : '', (data?.anomalies ?? []).slice(0, 4).map(a => a.saathiPrompt))
 
   const load = useCallback(() => {
     if (!token) return
@@ -323,7 +325,10 @@ export function WarRoomCanvas() {
   }
 
   function handleInvestigate(prompt: string) {
-    void sendMessage(prompt)
+    askSaathi({
+      about: { canvasType: 'OPEN_WAR_ROOM', title: 'War Room', subtitle: 'Live anomalies — investigate + act', context: data ? brief(data) : '', quickAsks: (data?.anomalies ?? []).slice(0, 4).map(a => a.saathiPrompt) },
+      prompt,
+    })
   }
 
   const filtered = data?.anomalies.filter(a =>

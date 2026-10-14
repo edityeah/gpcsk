@@ -52,6 +52,9 @@ const GUJARAT_BBOX = {
 
 const OPENAQ_BASE = 'https://api.openaq.org/v3'
 const WAQI_BASE   = 'https://api.waqi.info'
+// Per-request budget: WAQI sits on a single Linode in Tokyo; a hung socket
+// must not stall the hourly cron.
+const WAQI_TIMEOUT_MS = 15_000
 
 /** WAQI canonical parameter keys → our parameter keys. */
 const WAQI_PARAM_MAP: Record<string, { key: string; unit: string }> = {
@@ -112,7 +115,7 @@ async function searchWaqiGujaratStations(token: string): Promise<WaqiBboxStation
   const byUid = new Map<number, WaqiBboxStation>()
   for (const keyword of WAQI_GUJARAT_KEYWORDS) {
     try {
-      const res = await fetch(`${WAQI_BASE}/search/?keyword=${encodeURIComponent(keyword)}&token=${token}`)
+      const res = await fetch(`${WAQI_BASE}/search/?keyword=${encodeURIComponent(keyword)}&token=${token}`, { signal: AbortSignal.timeout(WAQI_TIMEOUT_MS) })
       if (!res.ok) continue
       const json = await res.json() as { status: string; data: WaqiSearchHit[] }
       if (json.status !== 'ok' || !Array.isArray(json.data)) continue
@@ -137,12 +140,16 @@ async function searchWaqiGujaratStations(token: string): Promise<WaqiBboxStation
 async function fetchWaqiGujaratStations(token: string): Promise<ParsedLocation[]> {
   // bbox: latlng=south,west,north,east (Gujarat 20-25 lat, 68-75 lng)
   const bboxUrl = `${WAQI_BASE}/map/bounds/?latlng=20.1,68.0,24.8,74.5&token=${token}`
-  const bboxRes = await fetch(bboxUrl)
-  if (!bboxRes.ok) throw new Error(`WAQI bbox ${bboxRes.status}`)
-  const bboxJson = await bboxRes.json() as { status: string; data: WaqiBboxStation[] }
-  if (bboxJson.status !== 'ok') throw new Error(`WAQI status ${bboxJson.status}`)
-
-  let stations = Array.isArray(bboxJson.data) ? bboxJson.data : []
+  let stations: WaqiBboxStation[] = []
+  try {
+    const bboxRes = await fetch(bboxUrl, { signal: AbortSignal.timeout(WAQI_TIMEOUT_MS) })
+    if (!bboxRes.ok) throw new Error(`WAQI bbox ${bboxRes.status}`)
+    const bboxJson = await bboxRes.json() as { status: string; data: WaqiBboxStation[] }
+    if (bboxJson.status !== 'ok') throw new Error(`WAQI status ${bboxJson.status}`)
+    stations = Array.isArray(bboxJson.data) ? bboxJson.data : []
+  } catch (err) {
+    logger.warn({ err }, 'AAQM ingest: WAQI bbox request failed — trying keyword search')
+  }
   if (stations.length === 0) {
     logger.info('AAQM ingest: WAQI bbox returned 0 stations — falling back to keyword search')
     stations = await searchWaqiGujaratStations(token)
@@ -161,7 +168,7 @@ async function fetchWaqiGujaratStations(token: string): Promise<ParsedLocation[]
   const result: ParsedLocation[] = []
   for (const s of inGujarat) {
     try {
-      const feedRes = await fetch(`${WAQI_BASE}/feed/@${s.uid}/?token=${token}`)
+      const feedRes = await fetch(`${WAQI_BASE}/feed/@${s.uid}/?token=${token}`, { signal: AbortSignal.timeout(WAQI_TIMEOUT_MS) })
       if (!feedRes.ok) continue
       const feed = await feedRes.json() as WaqiFeed
       if (feed.status !== 'ok') continue
