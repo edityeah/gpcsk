@@ -10,16 +10,15 @@
 #      Custom Domains, then CNAME it to gpcsk.onrender.com in Cloudflare and
 #      detach the offline-guard Worker route (infra/cloudflare-worker).
 #
-# Free-tier notes: the web service sleeps after 15 min idle (first request
-# then takes ~30-60 s; the hourly WAQI/CEMS cron only fires while awake), and
-# Render's free Postgres has a limited lifetime — upgrade the DB plan if the
-# demo must persist. Both services run in Singapore (closest region to Gujarat).
+# Paid plans on purpose: `starter` web (always on, so the hourly WAQI/CEMS
+# cron keeps firing) and `basic-256mb` Postgres (persistent, no free-tier
+# expiry). Both run in Singapore (closest region to Gujarat).
 
 services:
   - type: web
     name: gpcsk
     runtime: node
-    plan: free
+    plan: starter
     region: singapore
     branch: main
     autoDeploy: true
@@ -52,7 +51,7 @@ services:
 
 databases:
   - name: gpcsk-db
-    plan: free
+    plan: basic-256mb
     databaseName: gpcsk
     user: gpcsk
     region: singapore

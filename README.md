@@ -145,7 +145,7 @@ pnpm --filter @gpcsk/api run ingest:cems  # manual CEMS refresh (currently fallb
 
 Build = [`scripts/render-build.sh`](scripts/render-build.sh) (shared → prisma generate → api → web with `VITE_API_URL=""`). The API serves `apps/web/dist` whenever `WEB_DIST_DIR` is set, so the same image works for Docker too.
 
-Free-tier caveats: the service sleeps after 15 min idle (first hit then takes ~30-60 s and the hourly ingest cron only fires while awake), and Render's free Postgres has a limited lifetime — upgrade `gpcsk-db` if the demo must persist.
+Plans: `starter` web service (always on, so the hourly ingest cron keeps firing) and `basic-256mb` Postgres (persistent). Drop both to `free` in `render.yaml` for a zero-cost demo, at the cost of cold starts and a 30-day database limit.
 
 ### Docker Compose + Cloudflare Tunnel (self-hosted)
 
