@@ -8,6 +8,9 @@ const Env = z.object({
   CORS_ALLOWED_ORIGINS: z.string().default('http://localhost:3001'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   ENABLE_LIVE_INGEST: z.string().optional().default('true'),
+  // When set, the API also serves the built web SPA from this directory on the
+  // same origin (single-service deployments such as Render). Unset = API only.
+  WEB_DIST_DIR: z.string().optional(),
 })
 
 export const env = Env.parse(process.env)

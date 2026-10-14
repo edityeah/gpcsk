@@ -146,8 +146,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [canvasStack, setCanvasStack] = useState<Array<{ module: string; args: Record<string, unknown> }>>([])
 
   // Derived view — keeps all existing consumers working unchanged
-  const canvasState: CanvasState = canvasStack.length > 0
-    ? { module: canvasStack[canvasStack.length - 1].module, args: canvasStack[canvasStack.length - 1].args }
+  const canvasTop = canvasStack[canvasStack.length - 1]
+  const canvasState: CanvasState = canvasTop
+    ? { module: canvasTop.module, args: canvasTop.args }
     : { module: null }
   const [busy, setBusy] = useState(false)
 

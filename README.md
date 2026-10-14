@@ -71,7 +71,7 @@ Live ingest runs hourly inside the API container; data lands in `MonitoringStati
 | Live data | WAQI public API (Gujarat AAQM) · `node-cron` for hourly refresh |
 | Auth | JWT — phone OTP / mock XGN SSO / demo role picker |
 | Tooling | pnpm workspaces — `apps/web`, `apps/api`, `packages/shared` |
-| Hosting | Docker Compose on a Mac → Cloudflare Tunnel (zero recurring cost) |
+| Hosting | Render (Blueprint: web service + Postgres) · or Docker Compose on a Mac → Cloudflare Tunnel |
 
 ```
 Internet ──HTTPS──► Cloudflare edge ──tunnel──► cloudflared on Mac
@@ -132,6 +132,22 @@ pnpm --filter @gpcsk/api run ingest:cems  # manual CEMS refresh (currently fallb
 ---
 
 ## Production deployment
+
+### Render (one-click Blueprint)
+
+[`render.yaml`](render.yaml) provisions a single **web service** (`gpcsk` — Express API that also serves the built SPA on the same origin) plus a **Postgres 16 + pgvector** database (`gpcsk-db`), both in Singapore.
+
+1. Render dashboard → **New +** → **Blueprint** → connect `github.com/edityeah/gpcsk` → **Apply**.
+2. On the `gpcsk` service → **Environment**, set `OPENAI_API_KEY` and `WAQI_TOKEN` (both marked `sync: false` so they never live in git).
+3. First boot runs [`scripts/render-start.mjs`](scripts/render-start.mjs): `prisma migrate deploy` → seed demo data (empty DB only) → start the API → chunk the GPCB PDFs and embed them with OpenAI in the background. Nothing to run by hand.
+4. Open `https://gpcsk.onrender.com` and sign in as Senior Reviewer (phone `9000000005` + OTP `1234`).
+5. **Custom domain:** service → Settings → Custom Domains → add `gpcsk.adityeah.ai`, then in Cloudflare DNS point `gpcsk` at `gpcsk.onrender.com` (CNAME) and remove the `gpcsk.adityeah.ai/*` Worker route so the offline-guard no longer proxies to the tunnel.
+
+Build = [`scripts/render-build.sh`](scripts/render-build.sh) (shared → prisma generate → api → web with `VITE_API_URL=""`). The API serves `apps/web/dist` whenever `WEB_DIST_DIR` is set, so the same image works for Docker too.
+
+Free-tier caveats: the service sleeps after 15 min idle (first hit then takes ~30-60 s and the hourly ingest cron only fires while awake), and Render's free Postgres has a limited lifetime — upgrade `gpcsk-db` if the demo must persist.
+
+### Docker Compose + Cloudflare Tunnel (self-hosted)
 
 `docker-compose.tunnel.yml` + `.env.production` + Cloudflare Tunnel. See [docs/DEMO.md](docs/DEMO.md) for the demo flow and [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the deploy runbook.
 

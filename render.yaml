@@ -1,0 +1,59 @@
+# Render Blueprint — provisions GPCSK in one click.
+#
+#   1. Render → New + → Blueprint → connect github.com/edityeah/gpcsk
+#   2. Render creates: web service `gpcsk` (API + SPA, same origin)
+#                      Postgres `gpcsk-db` (pg16 + pgvector)
+#   3. Set OPENAI_API_KEY and WAQI_TOKEN in the dashboard (sync: false below)
+#   4. First boot: scripts/render-start.mjs migrates, seeds, starts the API,
+#      then chunks the GPCB PDFs + embeds them in the background.
+#   5. Custom domain: add gpcsk.adityeah.ai under the service's Settings →
+#      Custom Domains, then CNAME it to gpcsk.onrender.com in Cloudflare and
+#      detach the offline-guard Worker route (infra/cloudflare-worker).
+#
+# Free-tier notes: the web service sleeps after 15 min idle (first request
+# then takes ~30-60 s; the hourly WAQI/CEMS cron only fires while awake), and
+# Render's free Postgres has a limited lifetime — upgrade the DB plan if the
+# demo must persist. Both services run in Singapore (closest region to Gujarat).
+
+services:
+  - type: web
+    name: gpcsk
+    runtime: node
+    plan: free
+    region: singapore
+    branch: main
+    autoDeploy: true
+    buildCommand: bash scripts/render-build.sh
+    startCommand: node scripts/render-start.mjs
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 20.17.0
+      - key: NODE_ENV
+        value: production
+      - key: API_PORT
+        value: "10000"              # Render routes traffic to $PORT (10000)
+      - key: API_JWT_SECRET
+        generateValue: true
+      - key: API_JWT_TTL_HOURS
+        value: "24"
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://gpcsk.onrender.com,https://gpcsk.adityeah.ai
+      - key: ENABLE_LIVE_INGEST
+        value: "true"
+      - key: OPENAI_API_KEY
+        sync: false                 # set in dashboard — chat, RAG embeddings, voice
+      - key: WAQI_TOKEN
+        sync: false                 # set in dashboard — live CPCB AAQM via WAQI
+      - key: DATABASE_URL
+        fromDatabase:
+          name: gpcsk-db
+          property: connectionString
+
+databases:
+  - name: gpcsk-db
+    plan: free
+    databaseName: gpcsk
+    user: gpcsk
+    region: singapore
+    postgresMajorVersion: "16"

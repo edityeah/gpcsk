@@ -1,4 +1,6 @@
 import express, { type Express } from 'express'
+import fs from 'node:fs'
+import path from 'node:path'
 import cors from 'cors'
 import { pinoHttp } from 'pino-http'
 import { env } from './env.js'
@@ -44,5 +46,43 @@ export function buildApp(): Express {
   app.use('/api/notifications', notificationsRouter)
   app.use('/api/programs', programsRouter)
 
+  mountWebSpa(app)
+
   return app
+}
+
+/**
+ * Same-origin SPA hosting. When WEB_DIST_DIR points at a built Vite bundle
+ * (apps/web/dist), serve it behind the API routes above so a single service
+ * can host both halves (Render). Hashed assets are cached for 30 days;
+ * index.html is never cached so a new deploy always ships a fresh shell.
+ * Anything under /api or /health is left to the API — unknown API paths 404
+ * instead of returning index.html.
+ */
+function mountWebSpa(app: Express): void {
+  const dist = env.WEB_DIST_DIR
+  if (!dist) return
+  const indexHtml = path.join(dist, 'index.html')
+  if (!fs.existsSync(indexHtml)) {
+    logger.warn({ dist }, 'WEB_DIST_DIR set but index.html not found — SPA hosting disabled')
+    return
+  }
+  logger.info({ dist }, 'Serving web SPA from WEB_DIST_DIR')
+
+  const NO_CACHE = 'no-store, no-cache, must-revalidate, max-age=0'
+  app.use(
+    express.static(dist, {
+      index: false,
+      maxAge: '30d',
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('index.html')) res.setHeader('Cache-Control', NO_CACHE)
+      },
+    }),
+  )
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next()
+    if (req.path.startsWith('/api/') || req.path === '/api' || req.path === '/health') return next()
+    res.setHeader('Cache-Control', NO_CACHE)
+    res.sendFile(indexHtml)
+  })
 }

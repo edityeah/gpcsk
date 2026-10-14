@@ -10,7 +10,15 @@ interface ApiOptions {
   token?: string
 }
 
-const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8001'
+// VITE_API_URL may be:
+//   - an absolute origin  → API hosted separately (Docker/tunnel setup)
+//   - an empty string     → same-origin (API serves the SPA, e.g. Render)
+//   - unset               → dev falls back to the local API; prod = same-origin
+const BASE = (
+  import.meta.env.VITE_API_URL !== undefined
+    ? import.meta.env.VITE_API_URL
+    : import.meta.env.DEV ? 'http://localhost:8001' : ''
+).replace(/\/$/, '')
 
 export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
   const method = opts.method ?? 'GET'
